@@ -31,10 +31,8 @@ class AgentService:
         self.project_root = project_root or Path.cwd()
         self.config_service = ConfigService(project_root)
 
-        # Package templates directory (where command templates are stored)
-        self.package_templates_dir = (
-            Path(__file__).parent.parent.parent.parent / "templates" / "commands"
-        )
+        # Package features directory (where command templates are stored)
+        self.package_features_dir = Path(__file__).parent.parent.parent.parent / "features"
 
     def get_agent_commands_dir(self, agent_type: str) -> Path:
         """Get native commands directory for an agent.
@@ -147,11 +145,15 @@ class AgentService:
 
         return list_files(commands_dir, pattern, recursive=False)
 
-    def create_default_commands(self, agent_type: str) -> list[Path]:
-        """Create default command templates for an agent in native directory.
+    def create_default_commands(
+        self, agent_type: str, features: list[str] | None = None
+    ) -> list[Path]:
+        """Create command templates for an agent based on installed features.
 
         Args:
             agent_type: Agent type name
+            features: List of feature names to install commands for.
+                     If None, installs all default features.
 
         Returns:
             List of created command file paths
@@ -162,34 +164,42 @@ class AgentService:
         """
         commands_dir = self.create_agent_commands_dir(agent_type)
 
-        # Default command templates to copy
-        command_names = [
-            "rfc-create",
-            "rfc-list",
-            "rfc-validate",
-            "issue-plan",
-            "issue-implement",
-            "issue-validate",
-            "constitution-create",
-            "constitution-validate",
-            "constitution-amend",
-        ]
+        # Get features to install commands for
+        if features is None:
+            from open_agent_kit.constants import DEFAULT_FEATURES
+
+            features = DEFAULT_FEATURES
 
         created_files = []
-        for command_name in command_names:
-            # Read template from package
-            template_file = self.package_templates_dir / f"oak.{command_name}.md"
-            if not template_file.exists():
+
+        for feature_name in features:
+            # Get commands directory for this feature
+            feature_commands_dir = self.package_features_dir / feature_name / "commands"
+            if not feature_commands_dir.exists():
                 continue
 
-            content = read_file(template_file)
+            # Get command names from feature config
+            from typing import cast
 
-            # Write to agent-specific directory with proper extension
-            filename = self.get_command_filename(agent_type, command_name)
-            file_path = commands_dir / filename
-            if not file_path.exists():
-                write_file(file_path, content)
-                created_files.append(file_path)
+            from open_agent_kit.constants import FEATURE_CONFIG
+
+            feature_config = FEATURE_CONFIG.get(feature_name, {})
+            command_names = cast(list[str], feature_config.get("commands", []))
+
+            for command_name in command_names:
+                # Read template from feature's commands directory
+                template_file = feature_commands_dir / f"oak.{command_name}.md"
+                if not template_file.exists():
+                    continue
+
+                content = read_file(template_file)
+
+                # Write to agent-specific directory with proper extension
+                filename = self.get_command_filename(agent_type, command_name)
+                file_path = commands_dir / filename
+                if not file_path.exists():
+                    write_file(file_path, content)
+                    created_files.append(file_path)
 
         return created_files
 
@@ -268,6 +278,73 @@ class AgentService:
         cleanup_empty_directories(commands_dir, self.project_root)
 
         return removed_count
+
+    def remove_feature_commands(self, agent_type: str, feature_name: str) -> int:
+        """Remove commands for a specific feature from an agent.
+
+        Args:
+            agent_type: Agent type name
+            feature_name: Feature name to remove commands for
+
+        Returns:
+            Number of files removed
+
+        Examples:
+            Removes: oak.rfc-create.md, oak.rfc-list.md, oak.rfc-validate.md
+            Keeps: Commands from other features
+        """
+        from typing import cast
+
+        from open_agent_kit.constants import FEATURE_CONFIG
+
+        commands_dir = self.get_agent_commands_dir(agent_type)
+        if not commands_dir.exists():
+            return 0
+
+        feature_config = FEATURE_CONFIG.get(feature_name, {})
+        command_names = cast(list[str], feature_config.get("commands", []))
+
+        removed_count = 0
+        for command_name in command_names:
+            filename = self.get_command_filename(agent_type, command_name)
+            file_path = commands_dir / filename
+
+            if file_path.exists():
+                try:
+                    file_path.unlink()
+                    removed_count += 1
+                except Exception:
+                    pass
+
+        # Clean up empty directories
+        cleanup_empty_directories(commands_dir, self.project_root)
+
+        return removed_count
+
+    def get_all_command_names(self) -> list[str]:
+        """Get all available command names across all features.
+
+        Returns:
+            List of command names (e.g., ['rfc-create', 'constitution-validate'])
+
+        Examples:
+            >>> service = AgentService()
+            >>> commands = service.get_all_command_names()
+            >>> print(commands)
+            ['constitution-create', 'constitution-validate', 'constitution-amend',
+             'rfc-create', 'rfc-list', 'rfc-validate',
+             'issue-plan', 'issue-validate', 'issue-implement']
+        """
+        from typing import cast
+
+        from open_agent_kit.constants import FEATURE_CONFIG, SUPPORTED_FEATURES
+
+        all_commands: list[str] = []
+        for feature_name in SUPPORTED_FEATURES:
+            feature_config = FEATURE_CONFIG.get(feature_name, {})
+            command_names = cast(list[str], feature_config.get("commands", []))
+            all_commands.extend(command_names)
+        return all_commands
 
     def get_agent_display_name(self, agent_type: str) -> str:
         """Get display name for an agent.

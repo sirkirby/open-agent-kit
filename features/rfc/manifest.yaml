@@ -1,0 +1,27 @@
+# RFC Feature Manifest
+name: rfc
+display_name: "RFC Management"
+description: "Create, list, and validate Request for Comments (RFC) documents for proposing and documenting technical decisions."
+version: "1.0.0"
+default_enabled: true
+dependencies:
+  - constitution
+
+commands:
+  - rfc-create
+  - rfc-list
+  - rfc-validate
+
+templates:
+  - engineering.md
+  - architecture.md
+  - feature.md
+  - process.md
+
+# Feature-specific default configuration
+config_defaults:
+  directory: oak/rfc
+  template: engineering
+  auto_number: true
+  number_format: sequential
+  validate_on_create: true

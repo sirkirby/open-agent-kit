@@ -87,6 +87,7 @@ def upgrade_command(
         or plan["templates"]
         or plan["ide_settings"]
         or plan.get("migrations", [])
+        or plan.get("structural_repairs", [])
         or plan.get("version_outdated", False)
     )
 
@@ -157,6 +158,13 @@ def _display_upgrade_plan(plan: dict, dry_run: bool) -> None:
             f"[cyan]IDE Settings[/cyan] ({len(plan['ide_settings'])} IDE(s))\n{ide_list}"
         )
 
+    # Structural repairs
+    if plan.get("structural_repairs"):
+        repair_list = "\n".join([f"  • {r}" for r in plan["structural_repairs"]])
+        sections.append(
+            f"[cyan]Structural Repairs[/cyan] ({len(plan['structural_repairs'])} item(s))\n{repair_list}"
+        )
+
     # Migrations
     if plan.get("migrations"):
         migration_list = "\n".join([f"  • {m['description']}" for m in plan["migrations"]])
@@ -182,6 +190,8 @@ def _display_upgrade_results(results: UpgradeResults) -> None:
     if results.get("templates", {}).get("upgraded"):
         steps += 1
     if results.get("ide_settings", {}).get("upgraded"):
+        steps += 1
+    if results.get("structural_repairs"):
         steps += 1
     if results.get("migrations", {}).get("upgraded"):
         steps += 1
@@ -243,6 +253,12 @@ def _display_upgrade_results(results: UpgradeResults) -> None:
                 f"Failed to upgrade {len(failed)} IDE setting(s)",
                 ", ".join(failed),
             )
+
+    # Structural repairs
+    if results.get("structural_repairs"):
+        repaired = results["structural_repairs"]
+        tracker.start_step(f"Repairing {len(repaired)} structural issue(s)")
+        tracker.complete_step(f"Repaired {len(repaired)} structural issue(s)")
 
     # Migrations
     if results.get("migrations"):

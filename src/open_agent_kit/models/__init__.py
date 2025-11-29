@@ -9,8 +9,10 @@ from .constitution import (
     ConstitutionSection,
     ConstitutionStatus,
 )
+from .feature import FeatureManifest
 from .project import ProjectConfig, ProjectState
 from .rfc import RFCDocument, RFCIndex, RFCStatus
+from .state import OakState
 from .template import Template, TemplateConfig, TemplateHooks
 from .validation import (
     ValidationCategory,
@@ -21,6 +23,7 @@ from .validation import (
 )
 
 __all__ = [
+    "OakState",
     "ProjectConfig",
     "ProjectState",
     "Template",
@@ -29,6 +32,7 @@ __all__ = [
     "AgentConfig",
     "AgentCommand",
     "AgentCapabilities",
+    "FeatureManifest",
     "RFCDocument",
     "RFCIndex",
     "RFCStatus",

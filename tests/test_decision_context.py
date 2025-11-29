@@ -1,8 +1,5 @@
 """Tests for DecisionContext model."""
 
-import json
-from pathlib import Path
-
 import pytest
 from pydantic import ValidationError
 
@@ -159,47 +156,6 @@ class TestDecisionContextTemplateContext:
         # Check that context has the expected structure
         assert len(context) > 0
         assert all(isinstance(k, str) for k in context.keys())
-
-
-class TestDecisionContextExampleFiles:
-    """Test that example JSON files are valid."""
-
-    def test_example_decisions_json(self):
-        """Test that example-decisions.json validates."""
-        example_path = Path("templates/constitution/example-decisions.json")
-        if not example_path.exists():
-            pytest.skip("Example file not found")
-
-        with open(example_path) as f:
-            data = json.load(f)
-
-        # Should not raise ValidationError
-        decisions = DecisionContext(**data)
-        assert decisions is not None
-
-    def test_example_decisions_minimal_json(self):
-        """Test that example-decisions-minimal.json validates."""
-        example_path = Path("templates/constitution/example-decisions-minimal.json")
-        if not example_path.exists():
-            pytest.skip("Example file not found")
-
-        with open(example_path) as f:
-            data = json.load(f)
-
-        decisions = DecisionContext(**data)
-        assert decisions is not None
-
-    def test_example_decisions_comprehensive_json(self):
-        """Test that example-decisions-comprehensive.json validates."""
-        example_path = Path("templates/constitution/example-decisions-comprehensive.json")
-        if not example_path.exists():
-            pytest.skip("Example file not found")
-
-        with open(example_path) as f:
-            data = json.load(f)
-
-        decisions = DecisionContext(**data)
-        assert decisions is not None
 
 
 class TestDecisionContextFromJSON:

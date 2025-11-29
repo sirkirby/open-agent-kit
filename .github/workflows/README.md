@@ -34,7 +34,7 @@ open-agent-kit uses two main GitHub Actions workflows:
 
 #### 1. Lint and Format Check
 - **Runs on:** Ubuntu Latest
-- **Python:** 3.11
+- **Python:** 3.13
 - **Checks:**
   - Ruff linting (`ruff check src/`)
   - Black formatting (`black src/ tests/ --check`)
@@ -55,29 +55,21 @@ open-agent-kit uses two main GitHub Actions workflows:
   - Markdown linting on command templates
   - Uses markdownlint-cli with `.markdownlint.json` config
 
-#### 4. Validate Scripts
+#### 4. Integration Test (Smoke)
 - **Runs on:** Ubuntu Latest
-- **Checks:**
-  - ShellCheck on bash scripts (`scripts/bash/*.sh`)
-  - PSScriptAnalyzer on PowerShell scripts (`scripts/powershell/*.ps1`)
-
-#### 5. Integration Test
-- **Runs on:** Ubuntu Latest
-- **Python:** 3.11
+- **Python:** 3.13
 - **Tests:**
-  - `oak init` command
-  - Verifies directory structure
-  - `oak rfc create` command
-  - `oak rfc list` command
-  - `oak rfc validate` command
+  - `oak --version` command works
+  - `oak init` command completes
+  - Detailed structure validation is in the test suite (`tests/test_cli_init.py`)
 
-#### 6. Check Version
+#### 5. Check Version
 - **Runs on:** Ubuntu Latest
 - **Validates:**
-  - Version in `pyproject.toml` matches `src/__init__.py`
+  - Version in `pyproject.toml` matches runtime `open_agent_kit.__version__`
   - Prevents version mismatches
 
-#### 7. PR Summary
+#### 6. PR Summary
 - **Depends on:** All previous jobs
 - **Purpose:** Final status check
 - **Fails if:** Any job fails
@@ -89,7 +81,6 @@ The following checks must pass:
 - ✓ Lint and Format Check
 - ✓ Test (all OS/Python combinations)
 - ✓ Validate Templates
-- ✓ Validate Scripts
 - ✓ Integration Test
 - ✓ Check Version
 - ✓ PR Summary
@@ -107,16 +98,10 @@ black src/ tests/ --check
 mypy src/
 
 # Run tests
-pytest --cov=oak
-
-# Validate bash scripts
-shellcheck scripts/bash/*.sh
-
-# Validate PowerShell scripts
-pwsh -Command "Invoke-ScriptAnalyzer -Path scripts/powershell/*.ps1"
+pytest --cov=open_agent_kit
 
 # Validate markdown
-markdownlint 'templates/**/*.md'
+markdownlint 'features/**/*.md'
 ```
 
 ## Release Workflow
@@ -152,49 +137,7 @@ markdownlint 'templates/**/*.md'
 - `oak-X.Y.Z-py3-none-any.whl`
 - `open-agent-kit-X.Y.Z.tar.gz`
 
-#### 3. Build Template Packages
-- **Matrix strategy:** 4 agents × 2 script types = 8 packages
-- **Agents:** claude, copilot, codex, cursor
-- **Script types:** bash, powershell
-
-**Each package contains:**
-```
-open-agent-kit-templates-{agent}-{script}-{version}/
-├── .oak/
-│   ├── templates/
-│   │   ├── rfc/
-│   │   │   ├── engineering.md
-│   │   │   ├── architecture.md
-│   │   │   ├── feature.md
-│   │   │   └── process.md
-│   │   └── commands/
-│   │       ├── rfc-create.md
-│   │       └── rfc-review.md
-│   ├── commands/
-│   │   └── {agent}/
-│   │       └── (agent-specific commands)
-│   └── scripts/
-│       └── {bash|powershell}/
-│           └── (shell scripts)
-└── README.md
-```
-
-**Artifacts:**
-- `open-agent-kit-templates-claude-bash-X.Y.Z.tar.gz`
-- `open-agent-kit-templates-claude-powershell-X.Y.Z.tar.gz`
-- `open-agent-kit-templates-copilot-bash-X.Y.Z.tar.gz`
-- `open-agent-kit-templates-copilot-powershell-X.Y.Z.tar.gz`
-- `open-agent-kit-templates-codex-bash-X.Y.Z.tar.gz`
-- `open-agent-kit-templates-codex-powershell-X.Y.Z.tar.gz`
-- `open-agent-kit-templates-cursor-bash-X.Y.Z.tar.gz`
-- `open-agent-kit-templates-cursor-powershell-X.Y.Z.tar.gz`
-
-#### 4. Run Tests
-- **Runs:** Full test suite
-- **Uploads:** Coverage to Codecov
-- **Purpose:** Final validation before release
-
-#### 5. Create Release
+#### 3. Create Release
 - **Downloads:** All artifacts
 - **Generates:** Release notes from git commits
 - **Creates:** GitHub release
@@ -233,11 +176,11 @@ AI-assisted engineering productivity tools.
 ### Triggering a Release
 
 ```bash
-# 1. Update version in code
-# Edit pyproject.toml and src/__init__.py
+# 1. Update version in pyproject.toml [project] section
+# The open_agent_kit package reads version from pyproject.toml at runtime
 
 # 2. Commit changes
-git add .
+git add pyproject.toml
 git commit -m "Bump version to 0.2.0"
 git push origin main
 
@@ -327,11 +270,11 @@ Error: Version mismatch between files
 ```
 **Fix:**
 ```bash
-# Ensure versions match in:
-# - pyproject.toml
-# - src/__init__.py
+# Version is defined in pyproject.toml [project] section
+# open_agent_kit reads version from pyproject.toml at runtime
+# Just update pyproject.toml:
 
-git add pyproject.toml src/__init__.py
+git add pyproject.toml
 git commit -m "Fix version consistency"
 git push
 ```
@@ -348,8 +291,8 @@ Error: Version mismatch between tag and files
 git tag -d v0.2.0
 git push origin :refs/tags/v0.2.0
 
-# Fix version in files
-# Edit pyproject.toml and __init__.py
+# Fix version in pyproject.toml
+# Edit pyproject.toml [project] section
 
 # Commit and recreate tag
 git commit -am "Fix version to 0.2.0"

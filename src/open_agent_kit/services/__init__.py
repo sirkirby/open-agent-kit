@@ -9,6 +9,7 @@ from open_agent_kit.services.ide_settings_service import (
     get_ide_settings_service,
 )
 from open_agent_kit.services.rfc_service import RFCService, get_rfc_service
+from open_agent_kit.services.state_service import StateService, get_state_service
 from open_agent_kit.services.template_service import TemplateService, get_template_service
 from open_agent_kit.services.validation_service import ValidationService
 
@@ -23,6 +24,8 @@ __all__ = [
     "get_ide_settings_service",
     "RFCService",
     "get_rfc_service",
+    "StateService",
+    "get_state_service",
     "TemplateService",
     "get_template_service",
     "ValidationService",

@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-class TestStep(BaseModel):
+class IssueTestStep(BaseModel):
     """Represents a test step from ADO Test Case issues."""
 
     step_number: int = Field(description="Step sequence number")
@@ -68,7 +68,7 @@ class Issue(BaseModel):
     )
 
     # Type-specific fields (optional, backward compatible)
-    test_steps: list[TestStep] | None = Field(
+    test_steps: list[IssueTestStep] | None = Field(
         default=None, description="Test steps for Test Case issues"
     )
     repro_steps: list[str] | None = Field(

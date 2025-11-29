@@ -10,6 +10,7 @@ OAK_DIR = ".oak"
 RFC_DIR = "oak/rfc"
 ISSUE_DIR = "oak/issue"
 CONFIG_FILE = ".oak/config.yaml"
+STATE_FILE = ".oak/state.yaml"
 TEMPLATES_DIR = ".oak/templates"
 ISSUE_CONTEXT_FILENAME = "context.json"
 ISSUE_CONTEXT_SUMMARY_FILENAME = "context-summary.md"
@@ -17,6 +18,34 @@ ISSUE_PLAN_FILENAME = "plan.md"
 ISSUE_NOTES_FILENAME = "notes.md"
 ISSUE_VALIDATION_FILENAME = "validation.md"
 ISSUE_MANIFEST_FILENAME = ".manifest.json"
+
+# Features
+FEATURES_DIR = "features"
+FEATURE_MANIFEST_FILE = "manifest.yaml"
+SUPPORTED_FEATURES = ["constitution", "rfc", "issues"]
+FEATURE_CONFIG = {
+    "constitution": {
+        "name": "Constitution Management",
+        "description": "Create, validate, and maintain project constitutions",
+        "default_enabled": True,
+        "dependencies": [],
+        "commands": ["constitution-create", "constitution-validate", "constitution-amend"],
+    },
+    "rfc": {
+        "name": "RFC Management",
+        "description": "Create, list, and validate Request for Comments (RFC) documents",
+        "default_enabled": True,
+        "dependencies": ["constitution"],
+        "commands": ["rfc-create", "rfc-list", "rfc-validate"],
+    },
+    "issues": {
+        "name": "Issue Workflow",
+        "description": "Plan, implement, and validate work items from issue trackers",
+        "default_enabled": True,
+        "dependencies": ["constitution"],
+        "commands": ["issue-plan", "issue-implement", "issue-validate"],
+    },
+}
 
 # IDE settings
 SUPPORTED_IDES = ["vscode", "cursor", "none"]
@@ -38,8 +67,6 @@ IDE_SETTINGS_JSON_KEY_AUTO_APPROVE = "chat.tools.terminal.autoApprove"
 IDE_SETTINGS_OAK_PROMPT_PREFIX = "oak."
 IDE_SETTINGS_OAK_AUTO_APPROVE_KEYS = [
     "oak",
-    ".oak/scripts/bash/",
-    ".oak/scripts/powershell/",
 ]
 
 # Agent types
@@ -129,7 +156,7 @@ ISSUE_NOTES_MAX_LENGTH = 10000  # Maximum characters for notes
 GIT_COMMAND_TIMEOUT_SECONDS = 30.0
 
 # Agent configurations - maps agents to their native command directories
-# Following spec-kit pattern: each agent has a native folder where commands are installed
+# Pattern: each agent has a native folder where commands are installed
 AGENT_CONFIG = {
     "claude": {
         "name": "Claude Code",
@@ -607,6 +634,8 @@ UPGRADE_MESSAGES = {
 # Upgrade configuration
 UPGRADE_TEMPLATE_CATEGORIES = ["rfc", "constitution", "commands"]
 UPGRADE_IDE_SETTINGS = ["vscode", "cursor"]  # IDE settings to install/upgrade
+
+# Agent commands organized by feature (see FEATURE_CONFIG below for feature definitions)
 UPGRADE_COMMAND_NAMES = [
     "rfc-create",
     "rfc-list",
@@ -618,6 +647,67 @@ UPGRADE_COMMAND_NAMES = [
     "constitution-validate",
     "constitution-amend",
 ]
+
+# ============================================================================
+# FEATURE CONFIGURATION
+# ============================================================================
+
+# Features directory structure
+FEATURES_DIR = "features"
+FEATURE_MANIFEST_FILE = "manifest.yaml"
+FEATURE_COMMANDS_SUBDIR = "commands"
+FEATURE_TEMPLATES_SUBDIR = "templates"
+
+# Supported features (user-selectable)
+SUPPORTED_FEATURES = ["constitution", "rfc", "issues"]
+DEFAULT_FEATURES = ["constitution", "rfc", "issues"]
+CORE_FEATURE = "core"  # Not user-selectable
+
+# Feature registry - maps feature name to metadata
+FEATURE_CONFIG = {
+    "constitution": {
+        "name": "Constitution Management",
+        "description": "Create, validate, and maintain project constitutions",
+        "default_enabled": True,
+        "dependencies": [],
+        "commands": ["constitution-create", "constitution-validate", "constitution-amend"],
+    },
+    "rfc": {
+        "name": "RFC Management",
+        "description": "Create, list, and validate Request for Comments documents",
+        "default_enabled": True,
+        "dependencies": ["constitution"],
+        "commands": ["rfc-create", "rfc-list", "rfc-validate"],
+    },
+    "issues": {
+        "name": "Issue Workflow",
+        "description": "Plan, validate, and implement work items from GitHub or Azure DevOps",
+        "default_enabled": True,
+        "dependencies": ["constitution"],
+        "commands": ["issue-plan", "issue-validate", "issue-implement"],
+    },
+}
+
+# Feature display names (for CLI output)
+FEATURE_DISPLAY_NAMES = {
+    "constitution": "Constitution Management",
+    "rfc": "RFC Management",
+    "issues": "Issue Workflow",
+}
+
+# Feature-related messages
+FEATURE_MESSAGES = {
+    "feature_added": "Feature '{feature}' added successfully!",
+    "feature_removed": "Feature '{feature}' removed successfully!",
+    "feature_not_found": "Feature '{feature}' not found.",
+    "feature_already_installed": "Feature '{feature}' is already installed.",
+    "feature_not_installed": "Feature '{feature}' is not installed.",
+    "feature_required_by": "Feature '{feature}' is required by: {dependents}",
+    "feature_requires": "Feature '{feature}' requires: {dependencies}",
+    "feature_deps_auto_added": "Auto-adding required dependencies: {dependencies}",
+    "no_features_selected": "No features selected.",
+    "select_features_prompt": "Choose features to install. Dependencies will be auto-selected.",
+}
 
 # Validation patterns
 RFC_NUMBER_PATTERN = r"^(?:RFC-)?(\d{3,4}|20\d{2}-\d{3})$"

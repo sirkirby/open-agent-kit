@@ -262,7 +262,7 @@ def test_detects_rfc_templates_needing_upgrade(initialized_project: Path) -> Non
     from open_agent_kit.constants import OAK_DIR
 
     # Templates directory exists from initialization
-    templates_dir = initialized_project / OAK_DIR / "templates" / "rfc"
+    templates_dir = initialized_project / OAK_DIR / "features" / "rfc" / "templates"
 
     # Modify a template to make it different from package version
     (templates_dir / "engineering.md").write_text("# Old content", encoding="utf-8")
@@ -288,7 +288,7 @@ def test_detects_constitution_templates_needing_upgrade(initialized_project: Pat
     from open_agent_kit.constants import OAK_DIR
 
     # Templates directory exists from initialization
-    templates_dir = initialized_project / OAK_DIR / "templates" / "constitution"
+    templates_dir = initialized_project / OAK_DIR / "features" / "constitution" / "templates"
 
     # Modify a template to make it different from package version
     (templates_dir / "base_constitution.md").write_text("# Old content", encoding="utf-8")

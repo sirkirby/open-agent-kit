@@ -7,7 +7,7 @@ from typing import Any
 import jinja2
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
-from open_agent_kit.constants import TEMPLATES_DIR
+from open_agent_kit.constants import FEATURES_DIR, SUPPORTED_FEATURES
 from open_agent_kit.utils import ensure_dir, file_exists, read_file, write_file
 
 
@@ -27,14 +27,14 @@ class TemplateService:
         """
         self.project_root = project_root or Path.cwd()
 
-        # Use custom templates dir if provided, otherwise use project .oak/templates
-        if templates_dir:
-            self.templates_dir = templates_dir
-        else:
-            self.templates_dir = self.project_root / TEMPLATES_DIR
+        # Project features directory (.oak/features/)
+        self.project_features_dir = self.project_root / ".oak" / FEATURES_DIR
 
-        # Also include package templates as fallback
-        self.package_templates_dir = Path(__file__).parent.parent.parent.parent / "templates"
+        # Use custom templates dir if provided (for backward compatibility)
+        self.templates_dir: Path | None = templates_dir
+
+        # Package features directory (templates are inside each feature)
+        self.package_features_dir = Path(__file__).parent.parent.parent.parent / FEATURES_DIR
 
         # Setup Jinja2 environment with multiple loaders
         self.env = self._create_environment()
@@ -45,8 +45,27 @@ class TemplateService:
         Returns:
             Configured Jinja2 Environment
         """
-        # Try to load from project templates first, fall back to package templates
-        loader = FileSystemLoader([str(self.templates_dir), str(self.package_templates_dir)])
+        # Build list of template directories
+        # Priority: project templates first, then package templates
+        template_dirs = []
+
+        # Add project feature template directories first (higher priority)
+        for feature_name in SUPPORTED_FEATURES:
+            project_feature_templates = self.project_features_dir / feature_name / "templates"
+            if project_feature_templates.exists():
+                template_dirs.append(str(project_feature_templates))
+
+        # Add custom templates dir if provided (for backward compatibility)
+        if self.templates_dir:
+            template_dirs.append(str(self.templates_dir))
+
+        # Add package feature template directories last (fallback)
+        for feature_name in SUPPORTED_FEATURES:
+            package_feature_templates = self.package_features_dir / feature_name / "templates"
+            if package_feature_templates.exists():
+                template_dirs.append(str(package_feature_templates))
+
+        loader = FileSystemLoader(template_dirs)
         env = Environment(loader=loader, trim_blocks=True, lstrip_blocks=True)
 
         # Add custom filters
@@ -72,7 +91,7 @@ class TemplateService:
         """Render a template with given context.
 
         Args:
-            template_name: Template filename (e.g., "rfc/engineering.md")
+            template_name: Template filename (e.g., "rfc/engineering.md" or "engineering.md")
             context: Template context variables
 
         Returns:
@@ -84,8 +103,17 @@ class TemplateService:
         if context is None:
             context = {}
 
+        # Normalize template name - strip feature prefix if present
+        # since Jinja2 loader sees templates as flat structure
+        normalized_name = template_name
+        if "/" in template_name:
+            # Extract just the filename (e.g., "rfc/engineering.md" -> "engineering.md")
+            parts = template_name.split("/", 1)
+            if len(parts) == 2:
+                normalized_name = parts[1]
+
         try:
-            template = self.env.get_template(template_name)
+            template = self.env.get_template(normalized_name)
             return template.render(**context)
         except TemplateNotFound as e:
             raise FileNotFoundError(f"Template not found: {template_name}") from e
@@ -114,20 +142,49 @@ class TemplateService:
         """Get full path to a template file.
 
         Args:
-            template_name: Template filename
+            template_name: Template filename (e.g., "rfc/engineering.md" or "engineering.md")
 
         Returns:
             Path to template file if it exists, None otherwise
         """
-        # Check project templates first
-        project_path = self.templates_dir / template_name
-        if file_exists(project_path):
-            return project_path
+        # Parse template name to determine feature
+        # Format: "feature/filename.ext" or just "filename.ext"
+        parts = template_name.split("/", 1)
 
-        # Check package templates
-        package_path = self.package_templates_dir / template_name
-        if file_exists(package_path):
-            return package_path
+        if len(parts) == 2:
+            feature_name, filename = parts
+
+            # Check project feature templates first (higher priority)
+            project_feature_path = self.project_features_dir / feature_name / "templates" / filename
+            if file_exists(project_feature_path):
+                return project_feature_path
+
+            # Check package feature templates
+            package_feature_path = self.package_features_dir / feature_name / "templates" / filename
+            if file_exists(package_feature_path):
+                return package_feature_path
+        else:
+            # Search all project feature directories first
+            for feature_name in SUPPORTED_FEATURES:
+                project_feature_path = (
+                    self.project_features_dir / feature_name / "templates" / template_name
+                )
+                if file_exists(project_feature_path):
+                    return project_feature_path
+
+            # Then search all package feature directories
+            for feature_name in SUPPORTED_FEATURES:
+                package_feature_path = (
+                    self.package_features_dir / feature_name / "templates" / template_name
+                )
+                if file_exists(package_feature_path):
+                    return package_feature_path
+
+        # Fallback to custom templates dir if provided (backward compatibility)
+        if self.templates_dir:
+            custom_path = self.templates_dir / template_name
+            if file_exists(custom_path):
+                return custom_path
 
         return None
 
@@ -146,33 +203,46 @@ class TemplateService:
         """List available templates.
 
         Args:
-            category: Optional category to filter by (e.g., "rfc", "commands")
+            category: Optional category/feature to filter by (e.g., "rfc", "constitution")
 
         Returns:
-            List of template names
+            List of template names in format "feature/filename"
         """
         templates = []
 
         # Template file extensions to include
         extensions = ["*.md", "*.yaml", "*.json"]
 
-        # List from project templates
-        if self.templates_dir.exists():
+        # List from project feature templates first
+        for feature_name in SUPPORTED_FEATURES:
+            project_feature_templates_dir = self.project_features_dir / feature_name / "templates"
+            if project_feature_templates_dir.exists():
+                for ext in extensions:
+                    for path in project_feature_templates_dir.glob(ext):
+                        template_name = f"{feature_name}/{path.name}"
+                        if template_name not in templates:
+                            templates.append(template_name)
+
+        # List from package feature templates
+        for feature_name in SUPPORTED_FEATURES:
+            package_feature_templates_dir = self.package_features_dir / feature_name / "templates"
+            if package_feature_templates_dir.exists():
+                for ext in extensions:
+                    for path in package_feature_templates_dir.glob(ext):
+                        template_name = f"{feature_name}/{path.name}"
+                        if template_name not in templates:
+                            templates.append(template_name)
+
+        # List from custom templates dir if provided (backward compatibility)
+        if self.templates_dir and self.templates_dir.exists():
             for ext in extensions:
                 for path in self.templates_dir.rglob(ext):
                     rel_path = path.relative_to(self.templates_dir)
-                    templates.append(str(rel_path))
-
-        # List from package templates
-        if self.package_templates_dir.exists():
-            for ext in extensions:
-                for path in self.package_templates_dir.rglob(ext):
-                    rel_path = path.relative_to(self.package_templates_dir)
                     template_name = str(rel_path)
-                    if template_name not in templates:  # Don't duplicate
+                    if template_name not in templates:
                         templates.append(template_name)
 
-        # Filter by category if provided
+        # Filter by category/feature if provided
         if category:
             templates = [t for t in templates if t.startswith(f"{category}/")]
 
@@ -187,7 +257,7 @@ class TemplateService:
         """Copy a template from package to project templates directory.
 
         Args:
-            template_name: Template filename
+            template_name: Template filename (e.g., "rfc/engineering.md")
             destination: Optional custom destination path
             force: If True, overwrite existing files
 
@@ -205,7 +275,19 @@ class TemplateService:
         if destination:
             dest_path = destination
         else:
-            dest_path = self.templates_dir / template_name
+            # Parse template name to get feature and filename
+            parts = template_name.split("/", 1)
+            if len(parts) == 2:
+                feature_name, filename = parts
+                dest_path = self.project_features_dir / feature_name / "templates" / filename
+            else:
+                # If no feature prefix, fall back to custom templates dir
+                if self.templates_dir:
+                    dest_path = self.templates_dir / template_name
+                else:
+                    raise ValueError(
+                        f"Template name must include feature prefix (e.g., 'rfc/engineering.md'): {template_name}"
+                    )
 
         # Check if exists and not forcing
         if not force and file_exists(dest_path):
@@ -224,7 +306,7 @@ class TemplateService:
         """Get path to template in package (source of truth).
 
         Args:
-            template_name: Template filename
+            template_name: Template filename (e.g., "rfc/engineering.md")
 
         Returns:
             Path to template in package
@@ -232,21 +314,48 @@ class TemplateService:
         Raises:
             FileNotFoundError: If template doesn't exist
         """
-        package_path = self.package_templates_dir / template_name
-        if not file_exists(package_path):
-            raise FileNotFoundError(f"Template not found in package: {template_name}")
-        return package_path
+        # Parse template name: "feature/filename"
+        parts = template_name.split("/", 1)
+
+        if len(parts) == 2:
+            feature_name, filename = parts
+            package_path = self.package_features_dir / feature_name / "templates" / filename
+            if file_exists(package_path):
+                return package_path
+        else:
+            # Search all features
+            for feature_name in SUPPORTED_FEATURES:
+                package_path = (
+                    self.package_features_dir / feature_name / "templates" / template_name
+                )
+                if file_exists(package_path):
+                    return package_path
+
+        raise FileNotFoundError(f"Template not found in package: {template_name}")
 
     def get_template_project_path(self, template_name: str) -> Path:
         """Get path to template in project.
 
         Args:
-            template_name: Template filename
+            template_name: Template filename (e.g., "rfc/engineering.md")
 
         Returns:
             Path to template in project (may not exist)
         """
-        return self.templates_dir / template_name
+        # Parse template name to get feature and filename
+        parts = template_name.split("/", 1)
+        if len(parts) == 2:
+            feature_name, filename = parts
+            return self.project_features_dir / feature_name / "templates" / filename
+        else:
+            # If no feature prefix, fall back to custom templates dir
+            if self.templates_dir:
+                return self.templates_dir / template_name
+            else:
+                # Return path in first feature directory as default
+                return (
+                    self.project_features_dir / SUPPORTED_FEATURES[0] / "templates" / template_name
+                )
 
     def render_to_file(
         self,
@@ -285,16 +394,23 @@ class TemplateService:
         """Extract variable names from a template.
 
         Args:
-            template_name: Template filename
+            template_name: Template filename (e.g., "rfc/engineering.md" or "engineering.md")
 
         Returns:
             Set of variable names used in the template
         """
+        # Normalize template name - strip feature prefix if present
+        normalized_name = template_name
+        if "/" in template_name:
+            parts = template_name.split("/", 1)
+            if len(parts) == 2:
+                normalized_name = parts[1]
+
         try:
             # Get template source from the loader
             if self.env.loader is None:
                 return set()
-            source, _, _ = self.env.loader.get_source(self.env, template_name)
+            source, _, _ = self.env.loader.get_source(self.env, normalized_name)
             # Get undeclared variables (variables used but not defined in template)
             ast = self.env.parse(source)
             return set(ast.find_all(jinja2.nodes.Name))  # type: ignore[arg-type]  # jinja2.nodes.Node.find_all() returns Iterator but type stubs are incomplete
@@ -305,13 +421,20 @@ class TemplateService:
         """Validate template syntax.
 
         Args:
-            template_name: Template filename
+            template_name: Template filename (e.g., "rfc/engineering.md" or "engineering.md")
 
         Returns:
             Tuple of (is_valid, error_message)
         """
+        # Normalize template name - strip feature prefix if present
+        normalized_name = template_name
+        if "/" in template_name:
+            parts = template_name.split("/", 1)
+            if len(parts) == 2:
+                normalized_name = parts[1]
+
         try:
-            self.env.get_template(template_name)
+            self.env.get_template(normalized_name)
             return (True, None)
         except Exception as e:
             return (False, str(e))
@@ -325,7 +448,7 @@ class TemplateService:
         """Create a new template in project templates directory.
 
         Args:
-            template_name: Template filename
+            template_name: Template filename (e.g., "rfc/engineering.md")
             content: Template content
             overwrite: Whether to overwrite existing template
 
@@ -335,10 +458,13 @@ class TemplateService:
         Raises:
             FileExistsError: If template exists and overwrite=False
         """
-        template_path = self.templates_dir / template_name
+        template_path = self.get_template_project_path(template_name)
 
         if file_exists(template_path) and not overwrite:
             raise FileExistsError(f"Template already exists: {template_name}")
+
+        # Ensure parent directory exists
+        ensure_dir(template_path.parent)
 
         write_file(template_path, content)
         return template_path

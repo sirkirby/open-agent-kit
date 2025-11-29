@@ -7,8 +7,8 @@ Get started with open-agent-kit in under 5 minutes.
 ### Using uv (Recommended)
 
 ```bash
-# Install via SSH (requires SSH key configured)
-uv tool install git+ssh://git@github.com/sirkirby/open-agent-kit.git
+# Install via HTTPS
+uv tool install git+https://github.com/sirkirby/open-agent-kit.git
 
 # Verify installation
 oak --version
@@ -17,9 +17,6 @@ oak --version
 ### Alternative: Using pip
 
 ```bash
-# Via SSH
-pip install git+ssh://git@github.com/sirkirby/open-agent-kit.git
-
 # Or via HTTPS with GitHub token
 pip install git+https://${GITHUB_TOKEN}@github.com/sirkirby/open-agent-kit.git
 ```
@@ -35,23 +32,28 @@ oak init
 This will:
 
 1. Prompt you to select one or more AI agents (Claude, Copilot, Codex, Cursor, Gemini, Windsurf)
-2. Create the `.oak` directory structure
-3. Copy document templates (RFCs, constitutions, etc.)
+2. Prompt you to select which features to install (constitution, rfc, issues)
+3. Create the `.oak` directory structure
 4. Generate configuration file
-5. Install agent command templates
+5. Install agent command templates for your selected features
 
 **Multi-Agent Support**: Select multiple agents for teams where engineers use different AI tools.
+
+**Features**: Features have dependencies - selecting `rfc` or `issues` will automatically include `constitution`.
 
 **Non-interactive mode**:
 
 ```bash
-# Single agent
+# Single agent with all default features
 oak init --agent claude
 
-# Multiple agents
+# Specific features only
+oak init --agent claude --feature constitution --feature rfc
+
+# Multiple agents with all features
 oak init --agent claude --agent copilot --agent cursor
 
-# Add more agents later (idempotent)
+# Add more agents later (preserves existing features)
 oak init --agent gemini
 ```
 

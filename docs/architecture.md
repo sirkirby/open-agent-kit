@@ -132,10 +132,12 @@ graph TB
         IssueCmd[issue_cmd.py<br/>Issue Workflows]
         ConfigCmd[config_cmd.py<br/>Configuration]
         UpgradeCmd[upgrade_cmd.py<br/>Upgrade Templates]
+        FeatureCmd[feature_cmd.py<br/>Feature Management]
     end
 
     subgraph "Services"
         ConfigSvc[ConfigService<br/>Configuration CRUD]
+        FeatureSvc[FeatureService<br/>Feature Management]
         RFCSvc[RFCService<br/>RFC Operations]
         ConstSvc[ConstitutionService<br/>Constitution Ops]
         IssueSvc[IssueService<br/>Issue Ops]
@@ -173,9 +175,14 @@ graph TB
     CLI --> IssueCmd
     CLI --> ConfigCmd
     CLI --> UpgradeCmd
+    CLI --> FeatureCmd
 
     InitCmd --> ConfigSvc
     InitCmd --> AgentSvc
+    InitCmd --> FeatureSvc
+    FeatureCmd --> FeatureSvc
+    FeatureSvc --> ConfigSvc
+    FeatureSvc --> AgentSvc
     RFCCmd --> RFCSvc
     ConstCmd --> ConstSvc
     IssueCmd --> IssueSvc
@@ -328,11 +335,13 @@ src/open_agent_kit/
 │   ├── constitution_cmd.py    # oak constitution *
 │   ├── issue_cmd.py           # oak issue *
 │   ├── config_cmd.py          # oak config *
-│   └── upgrade_cmd.py         # oak upgrade *
+│   ├── upgrade_cmd.py         # oak upgrade *
+│   └── feature_cmd.py         # oak feature *
 │
 ├── services/                   # Business logic layer
 │   ├── __init__.py
 │   ├── config_service.py      # Configuration management
+│   ├── feature_service.py     # Feature management & dependencies
 │   ├── rfc_service.py         # RFC operations
 │   ├── constitution_service.py # Constitution operations
 │   ├── issue_service.py       # Issue orchestration
@@ -349,7 +358,8 @@ src/open_agent_kit/
 │
 ├── models/                     # Pydantic data models
 │   ├── __init__.py
-│   ├── config.py              # OAKConfig, RFCConfig, etc.
+│   ├── config.py              # OAKConfig, FeaturesConfig, etc.
+│   ├── feature.py             # FeatureManifest
 │   ├── rfc.py                 # RFCDocument, RFCStatus
 │   ├── constitution.py        # ConstitutionDocument
 │   ├── issue.py               # Issue, IssuePlanDetails
@@ -367,6 +377,37 @@ src/open_agent_kit/
     ├── step_tracker.py        # Progress tracking
     ├── version.py             # Version parsing
     └── env_utils.py           # Environment variable helpers
+
+features/                       # Feature packages (in package root)
+├── core/                       # Core assets (IDE settings)
+│   ├── manifest.yaml
+│   └── ide/
+│       ├── vscode-settings.json
+│       └── cursor-settings.json
+├── constitution/               # Constitution feature
+│   ├── manifest.yaml
+│   ├── commands/              # Agent command templates
+│   │   ├── oak.constitution-create.md
+│   │   ├── oak.constitution-validate.md
+│   │   └── oak.constitution-amend.md
+│   └── templates/             # Document templates
+│       ├── constitution.md.j2
+│       └── decision_points.yaml
+├── rfc/                        # RFC feature
+│   ├── manifest.yaml
+│   ├── commands/
+│   │   ├── oak.rfc-create.md
+│   │   ├── oak.rfc-list.md
+│   │   └── oak.rfc-validate.md
+│   └── templates/
+│       └── rfc/
+│           └── engineering.md.j2
+└── issues/                     # Issues feature
+    ├── manifest.yaml
+    └── commands/
+        ├── oak.issue-plan.md
+        ├── oak.issue-validate.md
+        └── oak.issue-implement.md
 ```
 
 ### User Project Structure
@@ -375,12 +416,28 @@ src/open_agent_kit/
 project/
 ├── .oak/                     # Configuration (not versioned)
 │   ├── config.yaml            # Project configuration
-│   ├── templates/             # Template overrides
-│   │   ├── rfc/
-│   │   └── commands/
-│   └── scripts/               # Shell scripts
-│       ├── bash/
-│       └── powershell/
+│   └── features/              # Feature assets (canonical install location)
+│       ├── constitution/
+│       │   ├── commands/      # Command templates (source of truth)
+│       │   │   ├── oak.constitution-create.md
+│       │   │   ├── oak.constitution-validate.md
+│       │   │   └── oak.constitution-amend.md
+│       │   └── templates/     # Document templates
+│       │       ├── base_constitution.md
+│       │       └── decision_points.yaml
+│       ├── rfc/
+│       │   ├── commands/
+│       │   │   ├── oak.rfc-create.md
+│       │   │   ├── oak.rfc-list.md
+│       │   │   └── oak.rfc-validate.md
+│       │   └── templates/
+│       │       ├── engineering.md
+│       │       └── architecture.md
+│       └── issues/
+│           └── commands/      # Issues has commands but no templates
+│               ├── oak.issue-plan.md
+│               ├── oak.issue-validate.md
+│               └── oak.issue-implement.md
 │
 ├── oak/                      # Generated artifacts (versioned)
 │   ├── constitution.md        # Project constitution
@@ -397,12 +454,34 @@ project/
 │               ├── context.json
 │               └── plan.md
 │
-└── .claude/                    # Agent-specific files
-    └── commands/              # Slash commands for Claude
-        ├── oak.rfc-create.md
-        ├── oak.issue-plan.md
-        └── ...
+├── .claude/                    # Agent-specific directories (copies from .oak/features/)
+│   └── commands/
+│       ├── oak.rfc-create.md
+│       ├── oak.issue-plan.md
+│       └── ...
+│
+├── .codex/                     # Codex agent directory (if enabled)
+│   └── commands/
+│
+└── .github/                    # GitHub/Copilot (if enabled)
+    └── agents/
 ```
+
+**Feature Asset Architecture**:
+
+1. **Canonical Install Location**: `.oak/features/{feature}/` is the source of truth for all feature assets
+   - `commands/` - Agent command templates (oak.{command}.md files)
+   - `templates/` - Document templates (if the feature has any)
+
+2. **Agent Directory Replication**: Commands are copied to agent-specific directories
+   - `.claude/commands/` for Claude Code
+   - `.codex/commands/` for OpenAI Codex
+   - `.github/agents/` for GitHub Copilot
+
+3. **Upgrade Flow**:
+   - `oak upgrade` updates `.oak/features/{feature}/commands/` and `templates/`
+   - Agent directories are also updated to stay in sync
+   - This ensures all agents get the latest command versions
 
 ---
 
@@ -416,8 +495,36 @@ project/
 - `load_config()` → OAKConfig
 - `save_config(config)` → None
 - `update_issue_provider(provider, **kwargs)` → None
+- `get_features()` → list[str]
+- `update_features(features)` → OAKConfig
 
 **Dependencies**: None (leaf service)
+
+---
+
+### FeatureService
+
+**Purpose**: Feature installation, removal, and dependency resolution
+
+**Key Methods**:
+- `get_available_features()` → list[FeatureManifest]
+- `resolve_dependencies(features)` → list[str]
+- `install_feature(feature_name, agents)` → dict
+- `remove_feature(feature_name, agents, remove_config)` → dict
+- `can_remove_feature(feature_name)` → tuple[bool, list[str]]
+
+**Dependencies**:
+- ConfigService (for feature config)
+- AgentService (for command installation)
+
+**Installation Flow**:
+1. Creates `.oak/features/{feature}/` directory
+2. Copies commands to `.oak/features/{feature}/commands/`
+3. Copies templates to `.oak/features/{feature}/templates/` (if any)
+4. Installs commands to each agent's directory (e.g., `.claude/commands/`)
+5. Updates config to mark feature as enabled
+
+**State**: Stateless (all data in filesystem and config)
 
 ---
 
@@ -491,8 +598,8 @@ project/
 **Dependencies**: None (uses Jinja2 directly)
 
 **Template Locations**:
-1. Package templates: `templates/` (in package)
-2. Project templates: `.oak/templates/` (managed by oak, replaced on upgrade)
+1. Project feature templates: `.oak/features/<feature>/templates/` (managed by oak, replaced on upgrade)
+2. Package feature templates: `features/<feature>/templates/` (in package, fallback)
 
 ---
 
@@ -623,23 +730,49 @@ class JiraProvider(IssueProvider):
         pass
 ```
 
-### 2. Adding a New RFC Template
+### 2. Adding a New Feature
 
 **Steps**:
-1. Create template file in `templates/rfc/mytemplate.md`
+1. Create feature directory in `features/<feature-name>/`
+2. Create `manifest.yaml` with feature metadata, commands, templates, dependencies
+3. Add command templates in `features/<feature-name>/commands/`
+4. Add document templates in `features/<feature-name>/templates/`
+5. Update `SUPPORTED_FEATURES` and `FEATURE_CONFIG` in constants.py
+6. Write tests for the feature
+7. Update documentation
+
+**Example manifest.yaml**:
+```yaml
+name: my-feature
+display_name: "My Feature"
+description: "Feature description for users"
+version: "1.0.0"
+default_enabled: true
+dependencies:
+  - constitution
+commands:
+  - my-command
+templates:
+  - my-template.md.j2
+```
+
+### 3. Adding a New RFC Template
+
+**Steps**:
+1. Create template file in `features/rfc/templates/rfc/mytemplate.md.j2`
 2. Add template name to constants or config
 3. Use Jinja2 syntax for variables
 4. Test rendering with TemplateService
 
-### 3. Adding a New Agent
+### 4. Adding a New Agent
 
 **Steps**:
 1. Add agent type to `AgentType` enum (models/agent.py)
 2. Add agent config to `AGENT_CONFIG` dict (constants.py)
-3. Create agent command templates (templates/commands/)
+3. Add command templates for each feature the agent needs
 4. Update AgentService to recognize new agent
 
-### 4. Adding Custom Validation
+### 5. Adding Custom Validation
 
 **Steps**:
 1. Add validation function to ValidationService

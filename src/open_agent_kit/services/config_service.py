@@ -43,6 +43,7 @@ from typing import Any
 from open_agent_kit.constants import (
     CONFIG_FILE,
     DEFAULT_CONFIG_YAML,
+    DEFAULT_FEATURES,
     ISSUE_DIR,
     ISSUE_PROVIDER_CONFIG_MAP,
     OAK_DIR,
@@ -108,12 +109,14 @@ class ConfigService:
         self,
         agents: list[str] | None = None,
         ides: list[str] | None = None,
+        features: list[str] | None = None,
     ) -> OakConfig:
         """Create and save default configuration.
 
         Args:
             agents: List of agent types (optional)
             ides: List of IDE types (optional)
+            features: List of feature names (optional, defaults to DEFAULT_FEATURES)
 
         Returns:
             Created OakConfig object
@@ -140,8 +143,16 @@ class ConfigService:
         # Write to file
         write_file(self.config_path, config_content)
 
-        # Load and return
-        return self.load_config()
+        # Load config
+        config = self.load_config()
+
+        # Set features (defaults to DEFAULT_FEATURES if not specified)
+        if features is None:
+            features = list(DEFAULT_FEATURES)
+        config.features.enabled = features
+        self.save_config(config)
+
+        return config
 
     def update_config(self, **kwargs: Any) -> OakConfig:
         """Update configuration with provided values.
@@ -412,27 +423,81 @@ class ConfigService:
     def get_completed_migrations(self) -> list[str]:
         """Get list of completed migration IDs.
 
+        Delegates to StateService for state management.
+
         Returns:
             List of migration IDs that have been completed
         """
-        config = self.load_config()
-        return config.migrations
+        from open_agent_kit.services.state_service import StateService
+
+        state_service = StateService(self.project_root)
+        return state_service.get_applied_migrations()
 
     def add_completed_migrations(self, migration_ids: list[str]) -> OakConfig:
         """Add migration IDs to the completed migrations list.
+
+        Delegates to StateService for state management.
 
         Args:
             migration_ids: List of migration IDs to mark as completed
 
         Returns:
+            Current OakConfig object (migrations stored in state, not config)
+        """
+        from open_agent_kit.services.state_service import StateService
+
+        state_service = StateService(self.project_root)
+        state_service.add_applied_migrations(migration_ids)
+        return self.load_config()
+
+    def get_features(self) -> list[str]:
+        """Get configured features list.
+
+        Returns:
+            List of enabled feature names
+        """
+        config = self.load_config()
+        return config.features.enabled
+
+    def update_features(self, features: list[str]) -> OakConfig:
+        """Update features list in configuration.
+
+        Args:
+            features: List of feature names
+
+        Returns:
             Updated OakConfig object
         """
         config = self.load_config()
-        # Merge and deduplicate
-        all_migrations = list(set(config.migrations + migration_ids))
-        config.migrations = all_migrations
+        config.features.enabled = features
         self.save_config(config)
         return config
+
+    def add_features(self, new_features: list[str]) -> OakConfig:
+        """Add features to configuration (merges with existing).
+
+        Args:
+            new_features: List of feature names to add
+
+        Returns:
+            Updated OakConfig object
+        """
+        existing = self.get_features()
+        all_features = list(set(existing + new_features))
+        return self.update_features(all_features)
+
+    def remove_features(self, features_to_remove: list[str]) -> OakConfig:
+        """Remove features from configuration.
+
+        Args:
+            features_to_remove: List of feature names to remove
+
+        Returns:
+            Updated OakConfig object
+        """
+        existing = self.get_features()
+        remaining = [f for f in existing if f not in features_to_remove]
+        return self.update_features(remaining)
 
 
 def get_config_service(project_root: Path | None = None) -> ConfigService:

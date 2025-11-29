@@ -1,12 +1,13 @@
 """Upgrade service for updating templates and commands."""
 
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from open_agent_kit.constants import (
+    FEATURE_CONFIG,
+    FEATURES_DIR,
     OAK_DIR,
-    UPGRADE_COMMAND_NAMES,
-    UPGRADE_TEMPLATE_CATEGORIES,
+    SUPPORTED_FEATURES,
 )
 from open_agent_kit.services.agent_service import AgentService
 from open_agent_kit.services.config_service import ConfigService
@@ -31,6 +32,7 @@ class UpgradeResults(TypedDict):
     templates: UpgradeCategoryResults
     ide_settings: UpgradeCategoryResults
     migrations: UpgradeCategoryResults
+    structural_repairs: list[str]
     version_updated: bool
 
 
@@ -49,10 +51,8 @@ class UpgradeService:
         self.template_service = TemplateService(project_root=project_root)
         self.ide_settings_service = IDESettingsService(project_root=project_root)
 
-        # Package templates directory (source of truth)
-        self.package_commands_dir = (
-            Path(__file__).parent.parent.parent.parent / "templates" / "commands"
-        )
+        # Package features directory (source of truth for commands)
+        self.package_features_dir = Path(__file__).parent.parent.parent.parent / FEATURES_DIR
 
     def is_initialized(self) -> bool:
         """Check if open-agent-kit is initialized.
@@ -83,6 +83,7 @@ class UpgradeService:
                 "templates_customized": bool,
                 "ide_settings": ["vscode", "cursor"],
                 "migrations": [{"id": "...", "description": "..."}],
+                "structural_repairs": ["issues directory missing", ...],
                 "version_outdated": bool,
                 "current_version": str,
                 "package_version": str
@@ -102,10 +103,14 @@ class UpgradeService:
             "templates_customized": False,
             "ide_settings": [],
             "migrations": [],
+            "structural_repairs": [],
             "version_outdated": version_outdated,
             "current_version": current_version,
             "package_version": VERSION,
         }
+
+        # Check for structural issues (missing feature directories, old structure)
+        plan["structural_repairs"] = self._get_structural_repairs()
 
         # Plan agent command upgrades
         if commands:
@@ -162,8 +167,13 @@ class UpgradeService:
             "templates": {"upgraded": [], "failed": []},
             "ide_settings": {"upgraded": [], "failed": []},
             "migrations": {"upgraded": [], "failed": []},
+            "structural_repairs": [],
             "version_updated": False,
         }
+
+        # Repair structural issues first (missing dirs, old structure)
+        if plan.get("structural_repairs"):
+            results["structural_repairs"] = self._repair_structure()
 
         # Upgrade agent commands
         for cmd in plan["commands"]:
@@ -212,6 +222,7 @@ class UpgradeService:
             + len(results["templates"]["upgraded"])
             + len(results["ide_settings"]["upgraded"])
             + len(results["migrations"]["upgraded"])
+            + len(results["structural_repairs"])
         )
         version_outdated = plan.get("version_outdated", False)
 
@@ -244,20 +255,45 @@ class UpgradeService:
         except ValueError:
             return []
 
-        # Check each command template from package
-        for command_name in UPGRADE_COMMAND_NAMES:
-            package_template = self.package_commands_dir / f"oak.{command_name}.md"
-            if not package_template.exists():
+        # Get enabled features from config
+        config = self.config_service.load_config()
+        enabled_features = (
+            config.features.enabled if config.features.enabled else SUPPORTED_FEATURES
+        )
+
+        # Check each enabled feature's commands
+        for feature_name in enabled_features:
+            feature_config = FEATURE_CONFIG.get(feature_name, {})
+            command_names = cast(list[str], feature_config.get("commands", []))
+            feature_commands_dir = self.package_features_dir / feature_name / "commands"
+
+            if not feature_commands_dir.exists():
                 continue
 
-            # Get installed command file
-            filename = self.agent_service.get_command_filename(agent, command_name)
-            installed_file = commands_dir / filename
+            for command_name in command_names:
+                package_template = feature_commands_dir / f"oak.{command_name}.md"
+                if not package_template.exists():
+                    continue
 
-            # Check if needs upgrade (file exists and content differs) OR is new (doesn't exist)
-            if installed_file.exists():
-                needs_upgrade = self._files_differ(package_template, installed_file)
-                if needs_upgrade:
+                # Get installed command file
+                filename = self.agent_service.get_command_filename(agent, command_name)
+                installed_file = commands_dir / filename
+
+                # Check if needs upgrade (file exists and content differs) OR is new
+                if installed_file.exists():
+                    needs_upgrade = self._files_differ(package_template, installed_file)
+                    if needs_upgrade:
+                        upgradeable.append(
+                            {
+                                "agent": agent,
+                                "command": command_name,
+                                "file": filename,
+                                "package_path": package_template,
+                                "installed_path": installed_file,
+                            }
+                        )
+                else:
+                    # New command that doesn't exist in project yet
                     upgradeable.append(
                         {
                             "agent": agent,
@@ -267,22 +303,11 @@ class UpgradeService:
                             "installed_path": installed_file,
                         }
                     )
-            else:
-                # New command that doesn't exist in project yet
-                upgradeable.append(
-                    {
-                        "agent": agent,
-                        "command": command_name,
-                        "file": filename,
-                        "package_path": package_template,
-                        "installed_path": installed_file,
-                    }
-                )
 
         return upgradeable
 
     def _get_upgradeable_templates(self) -> list[str]:
-        """Get RFC and other templates that can be upgraded or newly installed.
+        """Get templates that can be upgraded or newly installed.
 
         Returns:
             List of template names that can be upgraded or installed
@@ -292,31 +317,39 @@ class UpgradeService:
         # Template file extensions to check
         extensions = ["*.md", "*.yaml", "*.json"]
 
-        # Only check templates from known categories
-        for category in UPGRADE_TEMPLATE_CATEGORIES:
-            # Get package templates for this category
-            package_category_dir = self.template_service.package_templates_dir / category
-            if not package_category_dir.exists():
+        # Get enabled features from config
+        config = self.config_service.load_config()
+        enabled_features = (
+            config.features.enabled if config.features.enabled else SUPPORTED_FEATURES
+        )
+
+        # Check templates in each enabled feature's templates directory
+        for feature_name in enabled_features:
+            feature_templates_dir = self.package_features_dir / feature_name / "templates"
+            if not feature_templates_dir.exists():
                 continue
 
-            # Check all template file types
             for ext in extensions:
-                for package_file in package_category_dir.glob(ext):
-                    template_name = f"{category}/{package_file.name}"
+                for package_file in feature_templates_dir.glob(ext):
+                    # Template name format: feature/filename.ext
+                    template_name = f"{feature_name}/{package_file.name}"
 
                     try:
-                        # Get paths
-                        package_path = self.template_service.get_template_source_path(template_name)
-                        project_path = self.template_service.get_template_project_path(
-                            template_name
+                        # Project templates are in .oak/features/{feature}/templates/
+                        project_path = (
+                            self.project_root
+                            / ".oak"
+                            / "features"
+                            / feature_name
+                            / "templates"
+                            / package_file.name
                         )
 
-                        # Check if needs upgrade (exists and differs) OR is new (doesn't exist)
                         if project_path.exists():
-                            if self._files_differ(package_path, project_path):
+                            if self._files_differ(package_file, project_path):
                                 upgradeable.append(template_name)
                         else:
-                            # New template that doesn't exist in project yet
+                            # New template
                             upgradeable.append(template_name)
                     except Exception:
                         continue
@@ -352,15 +385,26 @@ class UpgradeService:
         write_file(installed_path, content)
 
     def _upgrade_rfc_template(self, template_name: str) -> None:
-        """Upgrade a single RFC template.
+        """Upgrade a single template.
 
         Args:
             template_name: Template name (e.g., "rfc/engineering.md")
         """
-        # Get source from package templates (not project templates)
-        # This ensures we always upgrade from the package source, not copying old to old
-        source_path = self.template_service.get_template_source_path(template_name)
-        dest_path = self.template_service.get_template_project_path(template_name)
+        # Parse template name: "feature/filename.ext"
+        parts = template_name.split("/", 1)
+        if len(parts) != 2:
+            return
+
+        feature_name, filename = parts
+
+        # Source from package features directory
+        source_path = self.package_features_dir / feature_name / "templates" / filename
+
+        # Destination in project .oak/features/{feature}/templates/
+        dest_path = self.project_root / ".oak" / "features" / feature_name / "templates" / filename
+
+        if not source_path.exists():
+            return
 
         # Ensure directory exists
         ensure_dir(dest_path.parent)
@@ -394,6 +438,117 @@ class UpgradeService:
             return content1 != content2
         except Exception:
             return False
+
+    def _get_structural_repairs(self) -> list[str]:
+        """Check for structural issues that need repair.
+
+        Returns:
+            List of repair descriptions
+        """
+        repairs = []
+
+        # Get enabled features from config
+        config = self.config_service.load_config()
+        enabled_features = (
+            config.features.enabled if config.features.enabled else SUPPORTED_FEATURES
+        )
+
+        features_dir = self.project_root / ".oak" / "features"
+
+        # Check core feature (always required, has ide/ instead of commands/)
+        core_dir = features_dir / "core"
+        core_ide_dir = core_dir / "ide"
+        if not core_dir.exists() or not core_ide_dir.exists():
+            repairs.append("Reinstall .oak/features/core/ (IDE settings)")
+
+        # Check for missing or incomplete feature directories
+        for feature_name in enabled_features:
+            feature_dir = features_dir / feature_name
+            commands_dir = feature_dir / "commands"
+
+            if not feature_dir.exists():
+                repairs.append(f"Reinstall missing .oak/features/{feature_name}/")
+            elif not commands_dir.exists():
+                repairs.append(
+                    f"Reinstall incomplete .oak/features/{feature_name}/ (missing commands/)"
+                )
+
+        # Check for old structure that needs cleanup
+        old_templates_dir = self.project_root / ".oak" / "templates"
+        if old_templates_dir.exists():
+            for subdir in ["constitution", "rfc", "commands", "ide"]:
+                if (old_templates_dir / subdir).exists():
+                    repairs.append(f"Remove old .oak/templates/{subdir}/ directory")
+                    break  # Only report once
+
+        return repairs
+
+    def _repair_structure(self) -> list[str]:
+        """Repair structural issues in the installation.
+
+        Returns:
+            List of repairs performed
+        """
+        import shutil
+
+        from open_agent_kit.services.feature_service import FeatureService
+
+        repaired = []
+
+        # Get enabled features and agents from config
+        config = self.config_service.load_config()
+        enabled_features = (
+            config.features.enabled if config.features.enabled else SUPPORTED_FEATURES
+        )
+        configured_agents = config.agents or []
+
+        features_dir = self.project_root / ".oak" / "features"
+        features_dir.mkdir(parents=True, exist_ok=True)
+
+        # Repair core feature (IDE settings) if missing
+        core_dir = features_dir / "core"
+        core_ide_dir = core_dir / "ide"
+        if not core_dir.exists() or not core_ide_dir.exists():
+            # Install ALL core IDE assets to .oak/features/core/ide/
+            self.ide_settings_service.install_core_assets()
+            repaired.append("Reinstalled .oak/features/core/ (IDE settings)")
+
+        # Use FeatureService to properly reinstall missing/incomplete features
+        feature_service = FeatureService(self.project_root)
+
+        for feature_name in enabled_features:
+            feature_dir = features_dir / feature_name
+            commands_dir = feature_dir / "commands"
+
+            # Check if feature directory is missing or incomplete (no commands/)
+            needs_install = not feature_dir.exists() or not commands_dir.exists()
+
+            if needs_install:
+                # Use FeatureService to properly install the feature
+                feature_service.install_feature(feature_name, configured_agents)
+                repaired.append(f"Reinstalled .oak/features/{feature_name}/")
+
+        # Clean up old structure
+        old_templates_dir = self.project_root / ".oak" / "templates"
+        if old_templates_dir.exists():
+            for subdir in ["constitution", "rfc", "commands", "ide"]:
+                old_subdir = old_templates_dir / subdir
+                if old_subdir.exists():
+                    try:
+                        shutil.rmtree(old_subdir)
+                        repaired.append(f"Removed old .oak/templates/{subdir}/")
+                    except Exception:
+                        pass
+
+            # Remove templates dir if empty
+            try:
+                if old_templates_dir.exists() and not any(old_templates_dir.iterdir()):
+                    old_templates_dir.rmdir()
+                    repaired.append("Removed empty .oak/templates/")
+            except Exception:
+                pass
+
+        return repaired
 
 
 def get_upgrade_service(project_root: Path | None = None) -> UpgradeService:

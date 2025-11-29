@@ -148,6 +148,7 @@ def multi_select(
     defaults: list[str] | None = None,
     min_selections: int = 0,
     max_selections: int | None = None,
+    dependents_map: dict[str, list[str]] | None = None,
 ) -> list[str]:
     """Interactive multi-selection menu with arrow key navigation.
 
@@ -157,6 +158,10 @@ def multi_select(
         defaults: List of default values (pre-selected)
         min_selections: Minimum number of selections required
         max_selections: Maximum number of selections allowed
+        dependents_map: Map of option value to list of dependent option values.
+            When an option is deselected, its dependents are also deselected.
+            Example: {"constitution": ["rfc", "issues"]} means deselecting
+            "constitution" will also deselect "rfc" and "issues".
 
     Returns:
         List of selected option values
@@ -254,7 +259,11 @@ def multi_select(
         elif key == readchar.key.SPACE:
             option = normalized_options[current_index]
             if option.value in selected:
+                # Deselecting - also deselect dependents
                 selected.remove(option.value)
+                if dependents_map and option.value in dependents_map:
+                    for dependent in dependents_map[option.value]:
+                        selected.discard(dependent)
             else:
                 if max_selections is None or len(selected) < max_selections:
                     selected.add(option.value)

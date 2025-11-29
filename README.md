@@ -29,9 +29,8 @@ Open Agent Kit brings multi-agent spec-driven development, SDLC integration, ski
 ## Features
 
 - **Multi-Agent Support**: Work with Claude, Copilot, Cursor, Codex, Gemini, and Windsurf in the same project seamlessly
-- **RFC Workflow**: Codify architectural decisions and features, and process changes with comprehensive RFC commands
 - **Engineering Constitution**: Build cross-agent coding standards, architectural patterns, and team conventions. Easily amend and version your constitution.
-- **Issue powered SDD**: Fetch and scaffold implementation plans from Azure DevOps or GitHub Issues, combining SDD with your SDLC
+- **AI-Driven Workflows**: Leverage AI agents to guide you through complex workflows with interactive prompts and validations. Leverages oak CLI under the hood for scaffolding, validation, integrations, and consistency
 - **Beautiful CLI**: Rich, interactive command-line interface for project setup, agent configuration, and easy updates
 - **Project-Based**: Simple `.oak` installation directory and `oak` asset directory structure
 
@@ -85,14 +84,17 @@ pip uninstall open-agent-kit
 ## Quick Start
 
 ```bash
-# Interactive mode (select multiple with checkboxes):
+# Interactive mode (select agents, IDEs, and features with checkboxes):
 oak init
 
-# Single agent:
+# Single agent with all default features:
 oak init --agent claude
 
-# Or multiple agents (for teams using different tools):
+# Multiple agents (for teams using different tools):
 oak init --agent claude --agent copilot
+
+# Select specific features:
+oak init --agent claude --feature constitution --feature rfc
 ```
 
 ## IDE Auto-Approval Settings
@@ -105,12 +107,41 @@ During initialization, Open Agent Kit can install IDE settings that enable auto-
 These settings configure your IDE to:
 
 - Auto-approve `oak` commands referenced in agent prompts
-- Auto-approve terminal commands from `.oak/scripts/` directories (future use)
 - Recommend Open Agent Kit prompt files in your AI assistant
 
 **Smart Merging**: Settings are intelligently merged with your existing configuration - your custom settings are preserved, and only new Open Agent Kit settings are added.
 
 **Upgrading**: Run `oak upgrade` to update IDE settings to the latest version.
+
+## Features
+
+Open Agent Kit uses a modular feature system that lets you install only the workflows you need:
+
+| Feature | Description | Dependencies |
+|---------|-------------|--------------|
+| **constitution** | Engineering standards, architectural patterns, team conventions | None |
+| **rfc** | RFC workflow for documenting technical decisions | constitution |
+| **issues** | spec-driven development (SDD) workflow which integrates with Azure DevOps/GitHub Issues | constitution |
+
+### Feature Selection
+
+During `oak init`, you can select which features to install. Features with dependencies automatically include their required features (e.g., selecting `rfc` will also install `constitution`).
+
+### Managing Features
+
+```bash
+# Interactive feature management
+oak feature
+
+# List installed and available features
+oak feature list
+
+# Add a feature
+oak feature add rfc
+
+# Remove a feature (with dependency check)
+oak feature remove issues
+```
 
 ## Commands
 
@@ -128,25 +159,26 @@ Options:
 
 - `--agent, -a`: Choose AI agent(s) - can be specified multiple times (claude, copilot, codex, cursor, gemini, windsurf)
 - `--ide, -i`: Choose IDE(s) to configure - can be specified multiple times (vscode, cursor, none)
-- `--force, -f`: Force re-initialization
+- `--feature, -f`: Choose feature(s) to install - can be specified multiple times (constitution, rfc, issues, none)
+- `--force`: Force re-initialization
 - `--no-interactive`: Skip interactive prompts
 
 Examples:
 
 ```bash
-# Interactive mode with multi-select checkboxes (agents and IDEs)
+# Interactive mode with multi-select checkboxes (agents, IDEs, and features)
 oak init
 
-# With specific agent and IDE
-oak init --agent claude --ide vscode
+# With specific agent, IDE, and features
+oak init --agent claude --ide vscode --feature constitution --feature rfc
 
-# Multiple agents and IDEs
+# Multiple agents and IDEs with all features
 oak init --agent claude --agent copilot --ide vscode --ide cursor
 
-# Skip IDE configuration
-oak init --agent claude --ide none
+# Skip IDE configuration, install only constitution
+oak init --agent claude --ide none --feature constitution
 
-# Add agents to existing installation
+# Add agents to existing installation (preserves existing features)
 oak init --agent cursor  # Adds Cursor to existing setup
 ```
 
@@ -157,8 +189,9 @@ Upgrade Open Agent Kit templates, agent commands, and IDE settings to the latest
 **What gets upgraded:**
 
 - **Agent commands**: Updates command templates with latest features
-- **RFC templates**: Replaced with latest versions
+- **Feature templates**: Replaced with latest versions
 - **IDE settings**: Smart merge with existing settings - your custom settings are preserved
+- **Core**: Updates shared scripts, config, and state
 
 Options:
 
@@ -186,112 +219,9 @@ oak upgrade --templates --force
 
 These commands are available in your AI agent interface after running `oak init --agent <name>`:
 
-#### `/oak.rfc-create <description>`
-
-- Drive the RFC workflow through your agent. The prompt now guides you to confirm requirements, investigate existing context (brownfield and greenfield), choose the correct template, and synthesize a full draft before relying on any CLI scaffolding.
-- Expect the agent to pause for clarification, surface related RFCs that may conflict or align, and request approval before running support commands (e.g., `oak rfc create`).
-- After drafting, you will review the generated markdown, integrate additional evidence, and decide whether to run validation.
-
-Example:
-
-```bash
-/oak.rfc-create Add OAuth2 authentication for API endpoints
-```
-
-The agent will collaborate with you to:
-
-1. Gather additional context (stakeholders, constraints, related work)
-2. Investigate the repository for patterns, dependencies, or prior RFCs
-3. Select the best-fit template and outline section-by-section content
-4. Scaffold the RFC file using the CLI and replace all placeholders with actionable content
-5. Summarize open questions and next steps for manual review
-
-#### `/oak.rfc-list [filter]`
-
-- Produce analytical views of the RFC portfolio. The agent can call `oak rfc list --json` to compute status breakdowns, stale drafts, top contributors, or filtered subsets, then explain what requires attention.
-- Natural language filters such as "draft RFCs older than 60 days" or "show approved RFCs tagged observability" are supported.
-
-#### `/oak.rfc-validate <rfc-number>`
-
-- Perform an interactive quality review. The agent combines manual evaluation with optional CLI validation (`oak rfc validate RFC-###`) after asking for consent.
-- Findings are grouped by severity (critical/major/minor), and you can opt-in for assistance applying fixes in place.
-
-> Tip: If no RFC number is provided, the agent will automatically target the most recent RFC.
-
-#### `/oak.constitution-create [description]`
-
-**Create an engineering constitution** - AI agent guides you through an interactive decision framework to generate a tailored project constitution.
-
-Example:
-
-```bash
-/oak.constitution-create
-```
-
-The AI will:
-
-1. **Analyze your project** (greenfield vs brownfield, existing patterns)
-2. **Guide you through key decisions**:
-   - Architectural pattern (Vertical Slice, Clean, Layered, etc.)
-   - Testing strategy (Comprehensive, Balanced, Pragmatic)
-   - Error handling approach (Result Pattern, exceptions, mixed)
-   - Code review policies, documentation level, CI/CD enforcement
-3. **Generate tailored constitution** matching YOUR needs (not prescriptive defaults)
-4. **Additively update agent instruction files** with constitution references (never overwrites)
-
-**For brownfield projects**: Detects and incorporates existing conventions from agent instruction files and codebase.
-
-**For existing users**: See [Constitution Upgrade Guide](docs/constitution-upgrade-guide.md) for modernization options.
-
-#### `/oak.constitution-validate`
-
-**Validate and modernize** your constitution. The AI will:
-
-- Check structure, metadata, and declarative language
-- **Reality alignment checks**: Verify requirements match actual project capabilities
-- **Detect old-style constitutions**: Offer modernization to decision-driven framework
-- Provide three paths: standard validation, full modernization, or hybrid approach
-
-See [Constitution Upgrade Guide](docs/constitution-upgrade-guide.md) for details on modernization options.
-
-#### `/oak.constitution-amend <summary>`
-
-**Add an amendment** to the constitution with proper versioning and ratification tracking. The AI helps you assess impact, choose the right version bump (major/minor/patch), and keeps agent instruction files in sync.
-
-### Issue Commands
-
-These commands integrate with issue trackers (Azure DevOps, GitHub Issues) to scaffold implementation plans.
-
-#### `/oak.issue-plan <provider> <issue>`
-
-Creates the implementation plan (context JSON + `plan.md`) and prepares the issue branch. The agent will:
-
-1. Confirm provider + issue id with you.
-2. Run `/oak.issue-plan <provider> <issue>` (which calls `oak issue plan <id> [--provider <key>]` under the hood) after `oak config issue-provider check` succeeds.
-3. Capture objectives, constraints, risks, dependencies, and definition of done via the CLI prompts.
-4. Review the generated artifacts in `oak/issue/<provider>/<issue>/` (including `codebase.md`, which snapshots the `src/` and `tests/` tree so the agent knows where to start exploring).
-
-#### `/oak.issue-implement <provider> <issue>`
-
-Consumes the stored plan plus any extra context you supply. The agent will:
-
-1. Ensure `/oak.issue-plan` and `/oak.issue-validate` have already run.
-2. Execute `/oak.issue-implement <provider> <issue> [notes...]` (invokes `oak issue implement …`).
-3. The CLI re-checkouts the branch, echoes the plan/notes/codebase snapshot paths, and logs the additional context to `notes.md`.
-4. You open `plan.md`, `notes.md`, and `codebase.md`, then study existing code before implementing.
-
-> If you omit the issue id, the agent command infers it from the current branch or the most recent `/oak.issue-plan` entry and prints which one it chose so you can confirm.
-
-#### `/oak.issue-validate <provider> <issue>`
-
-Validates the artifacts created by `/oak.issue-implement`. The agent will:
-
-1. Confirm the provider + issue id.
-2. Run `/oak.issue-validate <provider> <issue>` (calls `oak issue validate …`).
-3. Review the CLI summary for pending sections (objectives, risks, dependencies, definition of done) or missing acceptance criteria.
-4. Report findings and help fill in any gaps so the implementation is truly review-ready.
-
-> Validation can also infer the issue from your current branch or most recent plan if you omit the id; the agent command echoes what it selected.
+- [Constitution Management](docs/features/constitution.md)
+- [RFC Management](docs/features/rfc.md)
+- [SDD / Issue Management](docs/features/issues.md)
 
 ## Configuration
 
@@ -303,6 +233,12 @@ agents:
   - claude
   - copilot
 
+features:
+  enabled:
+    - constitution
+    - rfc
+    - issues
+
 rfc:
   directory: oak/rfc
   template: engineering
@@ -313,62 +249,6 @@ issue:
   directory: oak/issue
   provider: ado
 ```
-
-**Note**: The old `agent: claude` format is automatically migrated to `agents: [claude]` when you run any Open Agent Kit command.
-
-### Issue Provider Configuration
-
-Configure the tracker that feeds issue workflows. Use these commands to set up Azure DevOps or GitHub Issues integration:
-
-#### `oak config issue-provider set`
-
-Set the active provider and its required settings:
-
-```bash
-# Azure DevOps
-oak config issue-provider set \
-  --provider ado \
-  --organization contoso \
-  --project web \
-  --pat-env AZURE_DEVOPS_PAT
-
-# GitHub Issues
-oak config issue-provider set \
-  --provider github \
-  --owner sirkirby \
-  --repo open-agent-kit \
-  --token-env GITHUB_TOKEN
-```
-
-#### `oak config issue-provider check`
-
-Validates the active provider to ensure configuration and environment variables are in place:
-
-```bash
-oak config issue-provider check
-```
-
-#### `oak config issue-provider show`
-
-Displays the stored configuration (minus secrets) for auditing:
-
-```bash
-oak config issue-provider show
-```
-
-## Templates
-
-### Agent Command Templates
-
-Agent command templates define how AI agents interact with Open Agent Kit. These templates:
-
-- Use YAML frontmatter with `description` field
-- Include `$ARGUMENTS` placeholder for user input
-- Are maintained in `templates/commands/` in the Open Agent Kit package
-
-When you run `oak init --agent <agent>`, these templates are installed to the appropriate agent directory (`.claude/commands/`, `.github/agents/`, etc.) with the correct file extension for that agent.
-
-> **Note:** Don't manually edit the installed command files in `.claude/commands/` or `.github/agents/` - they will be overwritten when you upgrade Open Agent Kit. These files are managed by the package and updated with new versions.
 
 ## AI Agent Integration
 
@@ -385,9 +265,6 @@ Open Agent Kit integrates with AI coding assistants by installing command prompt
 
 After running `oak init --agent <agent-name>`, you can use commands like:
 
-- `/oak.rfc-create` - Create and enhance RFCs from natural language
-- `/oak.rfc-list` - List and analyze project RFCs
-- `/oak.rfc-validate` - Validate RFC structure and content
 - `/oak.constitution-create` - Create engineering constitutions from codebase analysis
 - `/oak.constitution-validate` - Validate constitution structure
 - `/oak.constitution-amend` - Add amendments to constitutions
@@ -576,10 +453,6 @@ See [RELEASING.md](RELEASING.md) for release process and [.github/WORKFLOWS.md](
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-MIT License - see LICENSE file for details.
 
 ## Documentation
 

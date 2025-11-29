@@ -27,7 +27,7 @@ class TestDecisionSchemaSync:
     @pytest.fixture
     def yaml_data(self):
         """Load decision_points.yaml."""
-        yaml_path = Path("templates/constitution/decision_points.yaml")
+        yaml_path = Path("features/constitution/templates/decision_points.yaml")
         if not yaml_path.exists():
             pytest.skip("decision_points.yaml not found")
 
@@ -41,7 +41,7 @@ class TestDecisionSchemaSync:
 
     def test_yaml_file_exists(self):
         """Ensure decision_points.yaml exists."""
-        yaml_path = Path("templates/constitution/decision_points.yaml")
+        yaml_path = Path("features/constitution/templates/decision_points.yaml")
         assert yaml_path.exists(), "decision_points.yaml not found"
 
     def test_yaml_has_decision_sections(self, yaml_data):
@@ -90,7 +90,7 @@ class TestDecisionSchemaSync:
             f"Model has key fields not documented in YAML:\n"
             f"  Missing: {missing_docs}\n"
             f"\n"
-            f"Action: Add these categories to templates/constitution/decision_points.yaml\n"
+            f"Action: Add these categories to features/constitution/templates/decision_points.yaml\n"
             f"with options and descriptions for agent guidance."
         )
 

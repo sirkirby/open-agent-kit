@@ -1,0 +1,16 @@
+# Core Feature Manifest
+# Core contains non-feature assets that support OAK functionality
+# These are not user-selectable features but foundational components
+name: core
+display_name: "Core Assets"
+description: "Core OAK assets including IDE settings. Not a selectable feature."
+version: "1.0.0"
+is_core: true
+
+# Core components
+components:
+  ide:
+    description: "IDE settings for VSCode and Cursor"
+    files:
+      - ide/vscode-settings.json
+      - ide/cursor-settings.json

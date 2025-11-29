@@ -40,12 +40,10 @@ def test_install_vscode_settings_new_file(
         settings = json.load(f)
 
     # Should have the expected keys
-    assert "chat.promptFilesRecommendations" in settings
     assert "chat.tools.terminal.autoApprove" in settings
 
     # Verify specific values
-    assert settings["chat.promptFilesRecommendations"]["oak.rfc-create"] is True
-    assert settings["chat.tools.terminal.autoApprove"][".oak/scripts/bash/"] is True
+    assert settings["chat.tools.terminal.autoApprove"]["oak"] is True
 
 
 def test_install_cursor_settings_new_file(
@@ -67,8 +65,8 @@ def test_install_cursor_settings_new_file(
         settings = json.load(f)
 
     # Should have the expected keys
-    assert "chat.promptFilesRecommendations" in settings
     assert "chat.tools.terminal.autoApprove" in settings
+    assert settings["chat.tools.terminal.autoApprove"]["oak"] is True
 
 
 def test_install_settings_merge_with_existing(
@@ -81,7 +79,7 @@ def test_install_settings_merge_with_existing(
 
     existing_settings = {
         "editor.fontSize": 14,
-        "chat.promptFilesRecommendations": {
+        "chat.tools.terminal.autoApprove": {
             "custom.command": True,
         },
     }
@@ -101,11 +99,10 @@ def test_install_settings_merge_with_existing(
 
     # Should preserve existing custom settings
     assert merged["editor.fontSize"] == 14
-    assert merged["chat.promptFilesRecommendations"]["custom.command"] is True
+    assert merged["chat.tools.terminal.autoApprove"]["custom.command"] is True
 
     # Should add new settings from template
-    assert merged["chat.promptFilesRecommendations"]["oak.rfc-create"] is True
-    assert "chat.tools.terminal.autoApprove" in merged
+    assert merged["chat.tools.terminal.autoApprove"]["oak"] is True
 
 
 def test_install_settings_preserves_user_values(
@@ -118,7 +115,7 @@ def test_install_settings_preserves_user_values(
 
     existing_settings = {
         "chat.tools.terminal.autoApprove": {
-            ".oak/scripts/bash/": False,  # User explicitly disabled
+            "oak": False,  # User explicitly disabled
             "custom/scripts/": True,  # User's custom entry
         },
     }
@@ -133,14 +130,11 @@ def test_install_settings_preserves_user_values(
     with open(settings_file) as f:
         merged = json.load(f)
 
-    # Should preserve user's explicit False value
-    assert merged["chat.tools.terminal.autoApprove"][".oak/scripts/bash/"] is False
+    # Should preserve user's explicit False value (user disabled oak)
+    assert merged["chat.tools.terminal.autoApprove"]["oak"] is False
 
     # Should preserve user's custom entry
     assert merged["chat.tools.terminal.autoApprove"]["custom/scripts/"] is True
-
-    # Should add new entry from template
-    assert ".oak/scripts/powershell/" in merged["chat.tools.terminal.autoApprove"]
 
 
 def test_install_settings_force_overwrites(
@@ -174,7 +168,8 @@ def test_install_settings_force_overwrites(
     assert "custom.setting" not in settings
 
     # Should have template settings
-    assert "chat.promptFilesRecommendations" in settings
+    assert "chat.tools.terminal.autoApprove" in settings
+    assert settings["chat.tools.terminal.autoApprove"]["oak"] is True
 
 
 def test_install_settings_no_change_returns_false(
@@ -216,9 +211,7 @@ def test_needs_upgrade_with_custom_settings(
     settings_file.parent.mkdir(parents=True, exist_ok=True)
 
     incomplete_settings = {
-        "chat.promptFilesRecommendations": {
-            "oak.rfc-create": True,
-        },
+        "editor.fontSize": 14,
         # Missing chat.tools.terminal.autoApprove
     }
 

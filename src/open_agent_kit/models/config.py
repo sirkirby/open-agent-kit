@@ -55,6 +55,15 @@ class IssueProvidersConfig(BaseModel):
     )
 
 
+class FeaturesConfig(BaseModel):
+    """Features configuration tracking installed features and their settings."""
+
+    enabled: list[str] = Field(
+        default_factory=list,
+        description="List of enabled feature names",
+    )
+
+
 class OakConfig(BaseModel):
     """Main open-agent-kit configuration."""
 
@@ -67,20 +76,22 @@ class OakConfig(BaseModel):
         default_factory=list,
         description="Configured IDEs (source of truth for installed IDE settings)",
     )
-    migrations: list[str] = Field(
-        default_factory=list,
-        description="Completed migration IDs (tracking for upgrade system)",
-    )
     rfc: RFCConfig = Field(default_factory=RFCConfig, description="RFC configuration")
     issue: IssueProvidersConfig = Field(
         default_factory=IssueProvidersConfig, description="Issue provider configuration"
+    )
+    features: FeaturesConfig = Field(
+        default_factory=FeaturesConfig,
+        description="Features configuration",
     )
 
     @classmethod
     def load(cls, config_path: Path) -> "OakConfig":
         """Load configuration from file.
 
-        Handles migration from old 'agent: str' format to new 'agents: list[str]' format.
+        Handles migration from old formats:
+        - 'agent: str' to new 'agents: list[str]'
+        - Infers enabled features from installed commands if features config is missing
         """
         import yaml
 
@@ -99,6 +110,35 @@ class OakConfig(BaseModel):
                     data["agents"] = [agent_value]
                 else:
                     data["agents"] = []
+
+            # Migration: Infer enabled features from installed commands
+            if "features" not in data:
+                enabled_features = set()
+                claude_dir = config_path.parent.parent / ".claude"
+                commands_dir = claude_dir / "commands"
+
+                if commands_dir.exists():
+                    # Map command prefixes to feature names
+                    command_prefix_map = {
+                        "oak.rfc-": "rfc",
+                        "oak.constitution-": "constitution",
+                        "oak.issue-": "issues",
+                    }
+
+                    # Scan for command files to infer features
+                    for cmd_file in commands_dir.glob("oak.*.md"):
+                        cmd_name = cmd_file.name
+                        for prefix, feature in command_prefix_map.items():
+                            if cmd_name.startswith(prefix):
+                                enabled_features.add(feature)
+                                break
+
+                # Add dependencies for inferred features
+                # constitution is a dependency of rfc and issues
+                if "rfc" in enabled_features or "issues" in enabled_features:
+                    enabled_features.add("constitution")
+
+                data["features"] = {"enabled": sorted(enabled_features)}
 
             return cls(**data)
 

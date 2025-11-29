@@ -12,7 +12,7 @@ from open_agent_kit.constants import (
     ISSUE_PROVIDER_VALIDATION_MESSAGES,
 )
 from open_agent_kit.models.config import AzureDevOpsProviderConfig
-from open_agent_kit.models.issue import Comment, Issue, RelatedIssue, TestStep
+from open_agent_kit.models.issue import Comment, Issue, IssueTestStep, RelatedIssue
 from open_agent_kit.services.issue_providers.base import IssueProvider, IssueProviderError
 
 
@@ -346,7 +346,7 @@ def _normalize_relation(relation: dict) -> RelatedIssue:
     )
 
 
-def _extract_test_steps(fields: dict) -> list[TestStep] | None:
+def _extract_test_steps(fields: dict) -> list[IssueTestStep] | None:
     """Extract and parse test steps from ADO Test Case XML.
 
     ADO Test Cases store steps in Microsoft.VSTS.TCM.Steps as XML:
@@ -361,7 +361,7 @@ def _extract_test_steps(fields: dict) -> list[TestStep] | None:
         fields: Raw fields dictionary from ADO API
 
     Returns:
-        List of TestStep objects, or None if no steps or parse error
+        List of IssueTestStep objects, or None if no steps or parse error
     """
     import xml.etree.ElementTree as ET
 
@@ -383,7 +383,7 @@ def _extract_test_steps(fields: dict) -> list[TestStep] | None:
                 ref_id_str = step_elem.get("ref", "0")
                 ref_id = int(ref_id_str) if ref_id_str.isdigit() else None
                 steps.append(
-                    TestStep(
+                    IssueTestStep(
                         step_number=step_id,
                         action="[Shared Step Reference]",
                         expected_result=None,
@@ -399,7 +399,7 @@ def _extract_test_steps(fields: dict) -> list[TestStep] | None:
 
             if action or expected:  # Only add if we have content
                 steps.append(
-                    TestStep(
+                    IssueTestStep(
                         step_number=step_id,
                         action=action,
                         expected_result=expected,

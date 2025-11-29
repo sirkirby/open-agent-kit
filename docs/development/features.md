@@ -1,112 +1,303 @@
 # Feature Development Playbook
 
-This guide expands on the high-level expectations captured in `.constitution.md`. Use it any
-time you add or significantly extend an open-agent-kit feature to ensure all integration points,
-tests, and docs stay in sync.
+This guide covers the features system in open-agent-kit and how to develop new features.
+
+## Features Overview
+
+Open Agent Kit uses a modular feature system where each feature is a self-contained package with:
+- `manifest.yaml` - Feature metadata, dependencies, and file listings
+- `commands/` - Agent command templates (`.md` files)
+- `templates/` - Document templates (Jinja2 `.j2` files)
+
+### Available Features
+
+| Feature | Description | Dependencies |
+|---------|-------------|--------------|
+| **constitution** | Engineering standards, architectural patterns, team conventions | None |
+| **rfc** | RFC workflow for documenting technical decisions | constitution |
+| **issues** | Issue workflow integration with Azure DevOps/GitHub Issues | constitution |
+
+### Core Assets
+
+The `features/core/` directory contains non-feature assets:
+- IDE settings (VSCode, Cursor auto-approval configurations)
+- Utility scripts (future)
+
+Core assets are always installed and are not user-selectable.
+
+## Feature Architecture
+
+```
+features/
+├── core/                       # Core assets (not a feature)
+│   ├── manifest.yaml
+│   └── ide/
+│       ├── vscode-settings.json
+│       └── cursor-settings.json
+├── constitution/               # Constitution feature
+│   ├── manifest.yaml
+│   ├── commands/
+│   │   ├── oak.constitution-create.md
+│   │   ├── oak.constitution-validate.md
+│   │   └── oak.constitution-amend.md
+│   └── templates/
+│       ├── constitution.md.j2
+│       └── decision_points.yaml
+├── rfc/                        # RFC feature
+│   ├── manifest.yaml
+│   ├── commands/
+│   │   ├── oak.rfc-create.md
+│   │   ├── oak.rfc-list.md
+│   │   └── oak.rfc-validate.md
+│   └── templates/
+│       └── rfc/
+│           └── engineering.md.j2
+└── issues/                     # Issues feature
+    ├── manifest.yaml
+    └── commands/
+        ├── oak.issue-plan.md
+        ├── oak.issue-validate.md
+        └── oak.issue-implement.md
+```
+
+## Feature Manifest
+
+Each feature has a `manifest.yaml` that defines:
+
+```yaml
+# Required fields
+name: my-feature               # Internal name (lowercase, hyphens)
+display_name: "My Feature"     # User-facing name
+description: "What this feature does"
+version: "1.0.0"
+
+# Optional fields
+default_enabled: true          # Install by default during init
+is_core: false                 # Core assets are not user-selectable
+dependencies: []               # List of required features
+commands: []                   # List of command names (without extension)
+templates: []                  # List of template paths
+config_defaults: {}            # Default config values for this feature
+```
+
+### Dependency Resolution
+
+Features can depend on other features. When a user selects a feature, all its dependencies are automatically included.
+
+Example: If `rfc` depends on `constitution`, selecting `rfc` will also install `constitution`.
+
+The `FeatureService.resolve_dependencies()` method handles:
+1. Topological sorting for installation order
+2. Circular dependency detection
+3. Missing dependency detection
+
+## Creating a New Feature
+
+### Step 1: Create Feature Directory
+
+```bash
+mkdir -p features/my-feature/{commands,templates}
+```
+
+### Step 2: Create Manifest
+
+Create `features/my-feature/manifest.yaml`:
+
+```yaml
+name: my-feature
+display_name: "My Feature"
+description: "What this feature does for users"
+version: "1.0.0"
+default_enabled: false
+dependencies:
+  - constitution  # If needed
+commands:
+  - my-command-1
+  - my-command-2
+templates:
+  - my-template.md.j2
+```
+
+### Step 3: Create Command Templates
+
+Create agent command templates in `features/my-feature/commands/`:
+
+```markdown
+---
+description: Short description for command listing
+---
+
+# My Command
+
+You are helping the user with [task].
+
+## Instructions
+
+1. Step one
+2. Step two
+3. Run `oak my-feature action` if needed
+
+$ARGUMENTS
+```
+
+### Step 4: Create Document Templates (Optional)
+
+Create Jinja2 templates in `features/my-feature/templates/`:
+
+```jinja
+# {{ title }}
+
+Created: {{ created_date }}
+Author: {{ author }}
+
+## Content
+
+{{ content }}
+```
+
+### Step 5: Update Constants
+
+Add the feature to `src/open_agent_kit/constants.py`:
+
+```python
+SUPPORTED_FEATURES = ["constitution", "rfc", "issues", "my-feature"]
+
+FEATURE_CONFIG = {
+    # ... existing features ...
+    "my-feature": {
+        "dependencies": ["constitution"],
+        "commands": ["my-command-1", "my-command-2"],
+        "templates": ["my-template.md.j2"],
+    },
+}
+```
+
+### Step 6: Write Tests
+
+Create tests in `tests/test_my_feature.py`:
+
+```python
+import pytest
+from open_agent_kit.services.feature_service import FeatureService
+
+class TestMyFeature:
+    def test_manifest_loads(self, tmp_path):
+        service = FeatureService(tmp_path)
+        manifest = service.get_feature_manifest("my-feature")
+        assert manifest is not None
+        assert manifest.name == "my-feature"
+
+    def test_dependencies_resolve(self, tmp_path):
+        service = FeatureService(tmp_path)
+        resolved = service.resolve_dependencies(["my-feature"])
+        assert "constitution" in resolved
+        assert "my-feature" in resolved
+```
+
+### Step 7: Update Documentation
+
+Update:
+- `README.md` - Features table
+- `QUICKSTART.md` - If affects onboarding
+- `docs/architecture.md` - Directory structure
 
 ## Critical Integration Points
 
-When a feature introduces new agent commands, update both services so fresh installs and
-upgrades behave consistently:
+When a feature introduces new agent commands, update both services:
 
-1. `src/open_agent_kit/services/agent_service.py::create_default_commands()` – controls which
-   commands `oak init` installs.
-2. `src/open_agent_kit/services/upgrade_service.py::_get_upgradeable_commands()` – ensures
-   `oak upgrade` delivers the same commands to existing projects.
+1. `AgentService.create_default_commands()` - Controls which commands `oak init` installs
+2. `UpgradeService._get_upgradeable_commands()` - Ensures `oak upgrade` delivers commands to existing projects
 
-## Phase Checklist
+Both services use `FeatureService.get_feature_commands()` to get commands for installed features.
 
-### Phase 1 – Planning & Design
+## Feature Configuration
 
-- Define feature scope and success criteria.
-- Identify new constants (paths, statuses, messages) and add them to `constants.py`.
-- Design required models, services, CLI commands, agent workflows, and configuration
-  needs.
+Features can define config defaults in their manifest:
 
-### Phase 2 – Core Implementation
+```yaml
+config_defaults:
+  my_setting: default_value
+  nested:
+    key: value
+```
 
-- Add constants to `src/open_agent_kit/constants.py`.
-- Create or update models (and export them in `models/__init__.py`).
-- Add supporting utilities in `src/open_agent_kit/utils/` when needed.
-- Implement services (remember `from_config()` helpers and `services/__init__.py` exports).
-- Provide document/command templates in `templates/`.
+These are merged into `.oak/config.yaml` under a feature-specific key:
 
-### Phase 3 – CLI Integration
+```yaml
+my-feature:
+  my_setting: default_value
+  nested:
+    key: value
+```
 
-- Add Typer commands under `src/open_agent_kit/commands/`.
-- Register them in `src/open_agent_kit/cli.py`.
-- Ensure every utility command supports `--json`.
-- Update `AgentService` and `UpgradeService` command lists (critical!).
+## Feature CLI Commands
 
-### Phase 4 – Agent Commands
+Users interact with features via:
 
-- Add agent command templates (e.g., `templates/commands/oak.feature-action.md`).
-- Run `oak init` in a fresh sandbox to confirm commands install for all agents.
+```bash
+# Interactive feature management
+oak feature
 
-### Phase 5 – Testing
+# List installed and available features
+oak feature list
 
-- Write unit tests for models, utilities, services, and CLI flows.
-- Cover new templates or rendering logic.
-- Run the full suite (`pytest`, `ruff`, `black`, `mypy`) before opening a PR.
-- Verify `oak init` and `oak upgrade` succeed end to end.
+# Add a feature (with dependency resolution)
+oak feature add my-feature
 
-### Phase 6 – Documentation
+# Remove a feature (with dependency checking)
+oak feature remove my-feature
+```
 
-- Update `README.md`, `QUICKSTART.md`, and relevant docs.
-- Refresh agent instructions if the workflow changes.
-- Amend `.constitution.md` only when standards or patterns evolve.
+## Testing Features
+
+### Unit Tests
+
+Test the feature in isolation:
+
+```python
+def test_feature_install(self, tmp_path, mock_config):
+    service = FeatureService(tmp_path)
+    result = service.install_feature("my-feature", agents=["claude"])
+    assert result["success"]
+    assert "commands_installed" in result
+```
+
+### Integration Tests
+
+Test with full init flow:
+
+```python
+def test_init_with_feature(self, tmp_path):
+    # Run oak init with the feature
+    result = runner.invoke(app, ["init", "--agent", "claude", "--feature", "my-feature"])
+    assert result.exit_code == 0
+
+    # Verify commands installed
+    assert (tmp_path / ".claude/commands/oak.my-command-1.md").exists()
+```
+
+### End-to-End Tests
+
+Test the full workflow from command execution to expected outcome.
 
 ## Common Pitfalls
 
-- **Forgetting service command lists** → new commands never reach users.
-- **Magic strings** → always import from `open_agent_kit.constants`.
-- **Missing exports** → add new models/services to `__init__.py`.
-- **No JSON output** → agents cannot parse CLI responses.
+- **Forgetting service command lists** → New commands never reach users
+- **Missing manifest fields** → Feature fails to load
+- **Circular dependencies** → Installation fails
+- **Magic strings** → Always import from `open_agent_kit.constants`
+- **Missing exports** → Add new models/services to `__init__.py`
 
-## Configuration Guidance
+## Validation Checklist
 
-Use dedicated config sections when a feature exposes user-facing options (multiple
-templates, numbering strategies, directory overrides). Skip config when the feature has a
-single, fixed behavior (e.g., constitution files).
+Before submitting a new feature:
 
-## File Touchpoints
-
-Expect to modify:
-
-```
-src/open_agent_kit/constants.py
-src/open_agent_kit/models/**/*.py
-src/open_agent_kit/services/**/*.py
-src/open_agent_kit/commands/**/*.py
-src/open_agent_kit/cli.py
-templates/**/*
-tests/**/*  (matching the source you changed)
-docs/**/*   (README, QUICKSTART, feature docs)
-.constitution.md (only if standards change)
-```
-
-## Validation Steps
-
-1. **Fresh install:** `oak init`, ensure new files appear in `.oak/` and agent command
-   folders.
-2. **Upgrade:** run `oak upgrade` in an older project to confirm commands/templates
-   update.
-3. **Command execution:** exercise each new CLI subcommand with and without `--json`.
-4. **Agent integration:** invoke the agent command (`/oak.feature-action`) and verify the
-   workflow completes.
-
-## Example Scenario
-
-When adding a review workflow:
-
-1. Create review constants (`REVIEW_DIR`, `REVIEW_STATUSES`, ...).
-2. Define `Review` models and services.
-3. Build CLI commands (`oak review create`, etc.) with JSON output.
-4. Register commands in `cli.py`, `AgentService`, and `UpgradeService`.
-5. Supply agent command templates under `templates/commands/`.
-6. Write unit/integration tests covering the new flow.
-7. Document usage in README/QUICKSTART.
-
-Follow this playbook alongside the constitution to keep contributions predictable and
-upgrade-safe.
-
+1. [ ] `manifest.yaml` has all required fields
+2. [ ] Dependencies are valid and resolve correctly
+3. [ ] Commands are listed in manifest
+4. [ ] Constants updated with feature config
+5. [ ] Unit tests pass
+6. [ ] `oak init` installs commands correctly
+7. [ ] `oak upgrade` updates commands correctly
+8. [ ] `oak feature add/remove` works
+9. [ ] Documentation updated

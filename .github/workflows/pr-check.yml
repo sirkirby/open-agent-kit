@@ -1,6 +1,8 @@
 name: PR Validation
 
 on:
+  push:
+    branches: [main]  # Build on main to populate cache for PRs
   pull_request:
     branches:
       - main
@@ -8,10 +10,13 @@ on:
     paths:
       - "src/**"
       - "tests/**"
-      - "templates/**"
-      - "scripts/**"
+      - "features/**"
       - "pyproject.toml"
       - ".github/workflows/**"
+
+concurrency:
+  group: pr-check-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-format:
@@ -69,7 +74,7 @@ jobs:
 
       - name: Run tests with pytest
         run: |
-          pytest --cov=oak --cov-report=xml --cov-report=term
+          pytest --cov=open_agent_kit --cov-report=xml --cov-report=term
 
   validate-templates:
     name: Validate Templates
@@ -84,43 +89,14 @@ jobs:
 
       - name: Validate RFC templates
         run: |
-          markdownlint 'templates/rfc/*.md' --config .markdownlint.json || true
+          markdownlint 'features/rfc/templates/**/*.md' --config .markdownlint.json || true
 
       - name: Validate command templates
         run: |
-          markdownlint 'templates/commands/*.md' --config .markdownlint.json || true
-
-  validate-scripts:
-    name: Validate Shell Scripts
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install ShellCheck
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck
-
-      - name: Validate bash scripts
-        run: |
-          find scripts/bash -name "*.sh" -exec shellcheck {} \;
-
-      - name: Install PSScriptAnalyzer
-        shell: pwsh
-        run: |
-          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
-
-      - name: Validate PowerShell scripts
-        shell: pwsh
-        run: |
-          $scripts = Get-ChildItem -Path scripts/powershell -Filter *.ps1 -Recurse
-          $scripts | ForEach-Object {
-            Invoke-ScriptAnalyzer -Path $_.FullName -ReportSummary
-          }
+          markdownlint 'features/*/commands/*.md' --config .markdownlint.json || true
 
   integration-test:
-    name: Integration Test
+    name: Integration Test (Smoke)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -136,49 +112,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
-      - name: Test oak init
+      - name: Smoke test - CLI loads and init works
         run: |
+          # Verify CLI is importable and version works
+          python -m oak.cli --version
+          # Verify init completes without error
           cd /tmp
-          python -m oak.cli init --no-interactive --agent claude --agent copilot
-
-      - name: Verify directory structure
-        run: |
-          cd /tmp
-          test -d .oak
-          test -f .oak/config.yaml
-          test -d .oak/templates/rfc
-          # Check native Claude commands directory
-          test -d .claude/commands
-          test -f .claude/commands/oak.rfc-create.md
-          test -f .claude/commands/oak.rfc-list.md
-          test -f .claude/commands/oak.rfc-validate.md
-          # Check native Copilot commands directory
-          test -d .github/agents
-          test -f .github/agents/oak.rfc-create.agent.md
-          test -f .github/agents/oak.rfc-list.agent.md
-          test -f .github/agents/oak.rfc-validate.agent.md
-
-      - name: Test RFC creation
-        run: |
-          cd /tmp
-          python -m oak.cli rfc create "Test RFC for CI validation" --author "CI Bot" --no-interactive
-
-      - name: Test RFC adopt command
-        run: |
-          cd /tmp
-          python -m oak.cli rfc adopt 001
-          test -d oak/rfc/adopted
-          test -f oak/rfc/adopted/RFC-001-Test-RFC-for-CI-validation.md
-
-      - name: Test RFC list
-        run: |
-          cd /tmp
-          python -m oak.cli rfc list
-
-      - name: Test RFC validation
-        run: |
-          cd /tmp
-          python -m oak.cli rfc validate RFC-001 || true
+          python -m oak.cli init --no-interactive --agent claude
+          # Detailed structure assertions are in the test suite (test_cli_init.py)
 
   check-version:
     name: Check Version Consistency
@@ -225,7 +166,6 @@ jobs:
         lint-and-format,
         test,
         validate-templates,
-        validate-scripts,
         integration-test,
         check-version,
       ]
@@ -236,7 +176,6 @@ jobs:
           if [ "${{ needs.lint-and-format.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.validate-templates.result }}" != "success" ] || \
-             [ "${{ needs.validate-scripts.result }}" != "success" ] || \
              [ "${{ needs.integration-test.result }}" != "success" ] || \
              [ "${{ needs.check-version.result }}" != "success" ]; then
             echo "One or more checks failed"

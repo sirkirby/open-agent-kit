@@ -17,8 +17,12 @@ def test_init_creates_subdirectories(temp_project_dir: Path) -> None:
     """Test that init creates required subdirectories."""
     init_command(force=False, agent=[], no_interactive=True)
     oak_dir = temp_project_dir / ".oak"
-    assert (oak_dir / "templates").exists()
-    assert (oak_dir / "templates" / "rfc").exists()
+    # Features directory with feature-specific subdirectories
+    assert (oak_dir / "features").exists()
+    # Default features should have their directories created
+    assert (oak_dir / "features" / "constitution").exists()
+    assert (oak_dir / "features" / "rfc").exists()
+    assert (oak_dir / "features" / "issues").exists()
 
 
 def test_init_creates_config_file(temp_project_dir: Path) -> None:
@@ -47,7 +51,7 @@ def test_init_writes_package_version(temp_project_dir: Path) -> None:
 def test_init_copies_templates(temp_project_dir: Path) -> None:
     """Test that init copies RFC templates."""
     init_command(force=False, agent=[], no_interactive=True)
-    templates_dir = temp_project_dir / ".oak" / "templates" / "rfc"
+    templates_dir = temp_project_dir / ".oak" / "features" / "rfc" / "templates"
     assert (templates_dir / "engineering.md").exists()
     assert (templates_dir / "architecture.md").exists()
     assert (templates_dir / "feature.md").exists()

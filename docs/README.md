@@ -10,6 +10,7 @@ Welcome to the open-agent-kit documentation. This directory contains comprehensi
 
 - **[Main README](../README.md)** - Project overview, features, installation
 - **[Quick Start Guide](../QUICKSTART.md)** - Get up and running in 5 minutes
+- **[Features System](../README.md#features)** - Modular feature selection and management
 - **[RFC Workflow](rfc-workflow.md)** - Complete RFC process and lifecycle
 - **[Constitution Workflow](../QUICKSTART.md#creating-a-project-constitution)** - Create engineering standards and conventions
 - **[Constitution Upgrade Guide](constitution-upgrade-guide.md)** - Modernize existing constitutions with decision framework
@@ -49,6 +50,8 @@ Welcome to the open-agent-kit documentation. This directory contains comprehensi
 | Task | Documentation |
 |------|---------------|
 | Install and set up | [Quick Start](../QUICKSTART.md) |
+| Select features during init | [README - Features](../README.md#features) |
+| Add/remove features | [README - Managing Features](../README.md#managing-features) |
 | Create my first RFC | [Quick Start](../QUICKSTART.md#step-2-create-your-first-rfc) |
 | Create a project constitution | [Quick Start - Constitution](../QUICKSTART.md#creating-a-project-constitution) |
 | Upgrade existing constitution | [Constitution Upgrade Guide](constitution-upgrade-guide.md) |
@@ -61,6 +64,7 @@ Welcome to the open-agent-kit documentation. This directory contains comprehensi
 |------|---------------|
 | Get started contributing | [Contributing Guide](../CONTRIBUTING.md) |
 | Understand code standards | [Constitution - Code Standards](../.constitution.md#iv-code-standards) |
+| Add a new feature | [Feature Development](development/features.md) |
 | Add a new command | [Claude Instructions - Adding Commands](../CLAUDE.md#vi-adding-new-commands) |
 | Add a new agent | [Constitution - Agent Integration](../.constitution.md#ix-ai-agent-integration) |
 | Write tests | [Constitution - Testing](../.constitution.md#vii-testing-strategy) |

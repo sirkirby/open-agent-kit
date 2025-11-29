@@ -1,0 +1,21 @@
+# Constitution Feature Manifest
+name: constitution
+display_name: "Constitution Management"
+description: "Create, validate, and maintain project constitutions that define engineering standards and best practices for AI-assisted development."
+version: "1.0.0"
+default_enabled: true
+dependencies: []
+
+commands:
+  - constitution-create
+  - constitution-validate
+  - constitution-amend
+
+templates:
+  - base_constitution.md
+  - agent_instructions.md
+  - decision_points.yaml
+  - example-decisions.json
+  - example-decisions-minimal.json
+  - example-decisions-comprehensive.json
+  - example-decisions-vertical-slice.json

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from open_agent_kit.models.issue import Comment, Issue, RelatedIssue, TestStep
+from open_agent_kit.models.issue import Comment, Issue, IssueTestStep, RelatedIssue
 from open_agent_kit.services.config_service import ConfigService
 from open_agent_kit.services.issue_providers.base import IssueProviderError
 from open_agent_kit.services.issue_service import (
@@ -397,8 +397,8 @@ class TestRenderContextSummary:
             title="Test Case",
             issue_type="Test Case",
             test_steps=[
-                TestStep(step_number=1, action="Click button", expected_result="Dialog opens"),
-                TestStep(step_number=2, action="Enter data", expected_result=None),
+                IssueTestStep(step_number=1, action="Click button", expected_result="Dialog opens"),
+                IssueTestStep(step_number=2, action="Enter data", expected_result=None),
             ],
         )
         content = _render_context_summary(issue)

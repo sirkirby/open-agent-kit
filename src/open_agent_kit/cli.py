@@ -9,6 +9,7 @@ from rich.console import Console
 
 from open_agent_kit.commands.config_cmd import config_app
 from open_agent_kit.commands.constitution_cmd import constitution_app
+from open_agent_kit.commands.feature_cmd import feature_app
 from open_agent_kit.commands.init_cmd import init_command
 from open_agent_kit.commands.issue_cmd import issue_app
 from open_agent_kit.commands.rfc_cmd import rfc_app
@@ -33,6 +34,7 @@ app.add_typer(rfc_app, name="rfc")
 app.add_typer(issue_app, name="issue")
 app.add_typer(config_app, name="config")
 app.add_typer(constitution_app, name="constitution")
+app.add_typer(feature_app, name="feature")
 
 # Create console for output
 console = Console()

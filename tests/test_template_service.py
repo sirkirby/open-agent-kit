@@ -685,8 +685,11 @@ class TestGetTemplateProjectPath:
 
         result = service.get_template_project_path("test.md")
         # Should default to first supported feature
-        assert ".oak/features" in str(result)
-        assert "templates/test.md" in str(result)
+        # Use Path parts for cross-platform compatibility
+        assert ".oak" in result.parts
+        assert "features" in result.parts
+        assert "templates" in result.parts
+        assert result.name == "test.md"
 
 
 class TestRenderToFile:

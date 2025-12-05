@@ -4,6 +4,7 @@ from collections.abc import Generator
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+import readchar
 
 from open_agent_kit.utils.interactive import (
     SelectOption,
@@ -82,7 +83,7 @@ class TestSelect:
             SelectOption("opt2", "Option 2"),
         ]
         # Simulate pressing Enter immediately
-        mock_readkey.return_value = "\r"
+        mock_readkey.return_value = readchar.key.ENTER
 
         result = select(options, "Choose one:")
         assert result == "opt1"
@@ -91,7 +92,7 @@ class TestSelect:
     def test_select_with_string_options(self, mock_console: Mock, mock_readkey: Mock) -> None:
         """Test select converts string options to SelectOption objects."""
         options = ["option1", "option2", "option3"]
-        mock_readkey.return_value = "\r"
+        mock_readkey.return_value = readchar.key.ENTER
 
         result = select(options, "Pick:")
         assert result == "option1"
@@ -103,7 +104,7 @@ class TestSelect:
             SelectOption("second", "Second"),
         ]
         # Down arrow then Enter
-        mock_readkey.side_effect = ["\x1b[B", "\r"]
+        mock_readkey.side_effect = [readchar.key.DOWN, readchar.key.ENTER]
 
         result = select(options)
         assert result == "second"
@@ -116,7 +117,12 @@ class TestSelect:
             SelectOption("third", "Third"),
         ]
         # Down twice, up once, Enter
-        mock_readkey.side_effect = ["\x1b[B", "\x1b[B", "\x1b[A", "\r"]
+        mock_readkey.side_effect = [
+            readchar.key.DOWN,
+            readchar.key.DOWN,
+            readchar.key.UP,
+            readchar.key.ENTER,
+        ]
 
         result = select(options)
         assert result == "second"
@@ -128,7 +134,7 @@ class TestSelect:
             SelectOption("b", "B"),
         ]
         # At second option, press down (wraps to first), then enter
-        mock_readkey.side_effect = ["\x1b[B", "\x1b[B", "\r"]
+        mock_readkey.side_effect = [readchar.key.DOWN, readchar.key.DOWN, readchar.key.ENTER]
 
         result = select(options)
         assert result == "a"
@@ -140,7 +146,7 @@ class TestSelect:
             SelectOption("second", "Second"),
         ]
         # At first option, press up (wraps to second), then enter
-        mock_readkey.side_effect = ["\x1b[A", "\r"]
+        mock_readkey.side_effect = [readchar.key.UP, readchar.key.ENTER]
 
         result = select(options)
         assert result == "second"
@@ -152,7 +158,7 @@ class TestSelect:
             SelectOption("opt2", "Option 2"),
             SelectOption("opt3", "Option 3"),
         ]
-        mock_readkey.return_value = "\r"
+        mock_readkey.return_value = readchar.key.ENTER
 
         result = select(options, default="opt2")
         assert result == "opt2"
@@ -162,7 +168,7 @@ class TestSelect:
     ) -> None:
         """Test select raises KeyboardInterrupt on Ctrl+C."""
         options = [SelectOption("a", "A"), SelectOption("b", "B")]
-        mock_readkey.return_value = "\x03"  # Ctrl+C
+        mock_readkey.return_value = readchar.key.CTRL_C
 
         with pytest.raises(KeyboardInterrupt):
             select(options)
@@ -180,7 +186,7 @@ class TestSelect:
             SelectOption("opt1", "Option 1", "First option description"),
             SelectOption("opt2", "Option 2", "Second option description"),
         ]
-        mock_readkey.return_value = "\r"
+        mock_readkey.return_value = readchar.key.ENTER
 
         select(options)
         # Verify description was printed
@@ -196,39 +202,48 @@ class TestSelect:
             SelectOption("opt2", "Option 2", "Description for option 2"),
         ]
         # Navigate down then back, which triggers re-render with description handling
-        mock_readkey.side_effect = ["\x1b[B", "\x1b[A", "\r"]
+        mock_readkey.side_effect = [readchar.key.DOWN, readchar.key.UP, readchar.key.ENTER]
 
         result = select(options)
         assert result == "opt1"
         # Verify console file operations were called (clearing and re-rendering)
         assert mock_console.file.write.called
 
-    @pytest.mark.parametrize(
-        "key_sequence,expected_result",
-        [
-            (["\r"], "first"),  # Enter immediately
-            (["\n"], "first"),  # LF (line feed)
-            (["\x1b[B", "\r"], "second"),  # Down then Enter
-            (["\x1b[B", "\x1b[B", "\r"], "third"),  # Down twice
-        ],
-    )
-    def test_select_various_key_inputs(
-        self,
-        mock_console: Mock,
-        mock_readkey: Mock,
-        key_sequence: list[str],
-        expected_result: str,
-    ) -> None:
-        """Test select with various key input sequences."""
+    def test_select_enter_immediately(self, mock_console: Mock, mock_readkey: Mock) -> None:
+        """Test select with Enter immediately."""
         options = [
             SelectOption("first", "First"),
             SelectOption("second", "Second"),
             SelectOption("third", "Third"),
         ]
-        mock_readkey.side_effect = key_sequence
+        mock_readkey.side_effect = [readchar.key.ENTER]
 
         result = select(options)
-        assert result == expected_result
+        assert result == "first"
+
+    def test_select_down_then_enter(self, mock_console: Mock, mock_readkey: Mock) -> None:
+        """Test select with Down then Enter."""
+        options = [
+            SelectOption("first", "First"),
+            SelectOption("second", "Second"),
+            SelectOption("third", "Third"),
+        ]
+        mock_readkey.side_effect = [readchar.key.DOWN, readchar.key.ENTER]
+
+        result = select(options)
+        assert result == "second"
+
+    def test_select_down_twice_then_enter(self, mock_console: Mock, mock_readkey: Mock) -> None:
+        """Test select with Down twice then Enter."""
+        options = [
+            SelectOption("first", "First"),
+            SelectOption("second", "Second"),
+            SelectOption("third", "Third"),
+        ]
+        mock_readkey.side_effect = [readchar.key.DOWN, readchar.key.DOWN, readchar.key.ENTER]
+
+        result = select(options)
+        assert result == "third"
 
 
 # ============================================================================
@@ -261,7 +276,7 @@ class TestMultiSelect:
             SelectOption("b", "Option B"),
         ]
         # Space to select, Enter to confirm
-        mock_readkey.side_effect = [" ", "\r"]
+        mock_readkey.side_effect = [readchar.key.SPACE, readchar.key.ENTER]
 
         result = multi_select(options)
         assert set(result) == {"a"}
@@ -269,7 +284,7 @@ class TestMultiSelect:
     def test_multi_select_with_strings(self, mock_console: Mock, mock_readkey: Mock) -> None:
         """Test multi_select converts strings to SelectOption objects."""
         options = ["one", "two", "three"]
-        mock_readkey.side_effect = [" ", "\r"]
+        mock_readkey.side_effect = [readchar.key.SPACE, readchar.key.ENTER]
 
         result = multi_select(options)
         assert set(result) == {"one"}
@@ -282,7 +297,12 @@ class TestMultiSelect:
             SelectOption("c", "C"),
         ]
         # Select first, down, select second, enter
-        mock_readkey.side_effect = [" ", "\x1b[B", " ", "\r"]
+        mock_readkey.side_effect = [
+            readchar.key.SPACE,
+            readchar.key.DOWN,
+            readchar.key.SPACE,
+            readchar.key.ENTER,
+        ]
 
         result = multi_select(options)
         assert set(result) == {"a", "b"}
@@ -291,7 +311,7 @@ class TestMultiSelect:
         """Test multi_select deselecting an option."""
         options = [SelectOption("a", "A"), SelectOption("b", "B")]
         # Select first, space to deselect, enter
-        mock_readkey.side_effect = [" ", " ", "\r"]
+        mock_readkey.side_effect = [readchar.key.SPACE, readchar.key.SPACE, readchar.key.ENTER]
 
         result = multi_select(options)
         assert result == []
@@ -303,7 +323,7 @@ class TestMultiSelect:
             SelectOption("b", "B"),
             SelectOption("c", "C"),
         ]
-        mock_readkey.return_value = "\r"
+        mock_readkey.return_value = readchar.key.ENTER
 
         result = multi_select(options, defaults=["a", "c"])
         assert set(result) == {"a", "c"}
@@ -315,7 +335,7 @@ class TestMultiSelect:
         options = [SelectOption("a", "A"), SelectOption("b", "B")]
         # Try to confirm without selections (should not work)
         # Then select one and confirm
-        mock_readkey.side_effect = ["\r", " ", "\r"]
+        mock_readkey.side_effect = [readchar.key.ENTER, readchar.key.SPACE, readchar.key.ENTER]
 
         result = multi_select(options, min_selections=1)
         assert result == ["a"]
@@ -331,7 +351,12 @@ class TestMultiSelect:
         ]
         # Select first, down, try to select second (max is 1)
         # Space should not work, then down, select third (but max=1)
-        mock_readkey.side_effect = [" ", "\x1b[B", " ", "\r"]
+        mock_readkey.side_effect = [
+            readchar.key.SPACE,
+            readchar.key.DOWN,
+            readchar.key.SPACE,
+            readchar.key.ENTER,
+        ]
 
         result = multi_select(options, max_selections=1)
         # Only first should be selected since max is 1
@@ -347,7 +372,14 @@ class TestMultiSelect:
         dependents = {"parent": ["child1", "child2"]}
 
         # Select parent and child, then deselect parent
-        mock_readkey.side_effect = [" ", "\x1b[B", " ", "\x1b[A", " ", "\r"]
+        mock_readkey.side_effect = [
+            readchar.key.SPACE,
+            readchar.key.DOWN,
+            readchar.key.SPACE,
+            readchar.key.UP,
+            readchar.key.SPACE,
+            readchar.key.ENTER,
+        ]
 
         result = multi_select(options, dependents_map=dependents)
         # Parent deselected, so children should be deselected too
@@ -362,7 +394,12 @@ class TestMultiSelect:
             SelectOption("c", "C"),
         ]
         # Down twice, select, enter
-        mock_readkey.side_effect = ["\x1b[B", "\x1b[B", " ", "\r"]
+        mock_readkey.side_effect = [
+            readchar.key.DOWN,
+            readchar.key.DOWN,
+            readchar.key.SPACE,
+            readchar.key.ENTER,
+        ]
 
         result = multi_select(options)
         assert result == ["c"]
@@ -370,7 +407,7 @@ class TestMultiSelect:
     def test_multi_select_ctrl_c(self, mock_console: Mock, mock_readkey: Mock) -> None:
         """Test multi_select raises KeyboardInterrupt on Ctrl+C."""
         options = [SelectOption("a", "A")]
-        mock_readkey.return_value = "\x03"
+        mock_readkey.return_value = readchar.key.CTRL_C
 
         with pytest.raises(KeyboardInterrupt):
             multi_select(options)
@@ -386,7 +423,7 @@ class TestMultiSelect:
             SelectOption("a", "A", "Description A"),
             SelectOption("b", "B", "Description B"),
         ]
-        mock_readkey.side_effect = ["\x1b[B", "\r"]
+        mock_readkey.side_effect = [readchar.key.DOWN, readchar.key.ENTER]
 
         multi_select(options)
         # Should print descriptions (only for focused option)
@@ -726,7 +763,7 @@ class TestSelectWithSearch:
     ) -> None:
         """Test select_with_search basic selection."""
         options = ["option1", "option2", "option3"]
-        mock_readkey.return_value = "\r"
+        mock_readkey.return_value = readchar.key.ENTER
 
         result = select_with_search(options)
         assert result == "option1"
@@ -741,7 +778,7 @@ class TestSelectWithSearch:
             SelectOption("b", "Beta"),
             SelectOption("c", "Gamma"),
         ]
-        mock_readkey.return_value = "\r"
+        mock_readkey.return_value = readchar.key.ENTER
 
         result = select_with_search(options)
         assert result == "a"
@@ -753,7 +790,7 @@ class TestSelectWithSearch:
         """Test select_with_search filters by typing."""
         options = ["apple", "apricot", "banana", "cherry"]
         # Type 'b', then Enter
-        mock_readkey.side_effect = ["b", "\r"]
+        mock_readkey.side_effect = ["b", readchar.key.ENTER]
 
         result = select_with_search(options)
         assert result == "banana"
@@ -765,7 +802,7 @@ class TestSelectWithSearch:
         """Test select_with_search handles backspace."""
         options = ["apple", "apricot", "banana"]
         # Type 'ab', backspace, then Enter
-        mock_readkey.side_effect = ["a", "b", "\x08", "\r"]
+        mock_readkey.side_effect = ["a", "b", readchar.key.BACKSPACE, readchar.key.ENTER]
 
         result = select_with_search(options)
         assert result == "apple"
@@ -777,7 +814,7 @@ class TestSelectWithSearch:
         """Test select_with_search arrow key navigation."""
         options = ["first", "second", "third"]
         # Down, down, Enter (select third)
-        mock_readkey.side_effect = ["\x1b[B", "\x1b[B", "\r"]
+        mock_readkey.side_effect = [readchar.key.DOWN, readchar.key.DOWN, readchar.key.ENTER]
 
         result = select_with_search(options)
         assert result == "third"
@@ -789,7 +826,12 @@ class TestSelectWithSearch:
         """Test select_with_search up navigation."""
         options = ["a", "b", "c"]
         # Down twice, up once, Enter
-        mock_readkey.side_effect = ["\x1b[B", "\x1b[B", "\x1b[A", "\r"]
+        mock_readkey.side_effect = [
+            readchar.key.DOWN,
+            readchar.key.DOWN,
+            readchar.key.UP,
+            readchar.key.ENTER,
+        ]
 
         result = select_with_search(options)
         assert result == "b"
@@ -801,7 +843,7 @@ class TestSelectWithSearch:
         """Test select_with_search up key clamped at start."""
         options = ["a", "b"]
         # Up when already at first, Enter
-        mock_readkey.side_effect = ["\x1b[A", "\r"]
+        mock_readkey.side_effect = [readchar.key.UP, readchar.key.ENTER]
 
         result = select_with_search(options)
         assert result == "a"
@@ -813,7 +855,7 @@ class TestSelectWithSearch:
         """Test select_with_search down key clamped at end."""
         options = ["a", "b"]
         # Down multiple times, Enter
-        mock_readkey.side_effect = ["\x1b[B", "\x1b[B", "\r"]
+        mock_readkey.side_effect = [readchar.key.DOWN, readchar.key.DOWN, readchar.key.ENTER]
 
         result = select_with_search(options)
         assert result == "b"
@@ -824,7 +866,7 @@ class TestSelectWithSearch:
     ) -> None:
         """Test select_with_search with default value."""
         options = ["opt1", "opt2", "opt3"]
-        mock_readkey.return_value = "\r"
+        mock_readkey.return_value = readchar.key.ENTER
 
         result = select_with_search(options, default="opt2")
         assert result == "opt2"
@@ -835,7 +877,7 @@ class TestSelectWithSearch:
     ) -> None:
         """Test select_with_search raises KeyboardInterrupt on Ctrl+C."""
         options = ["a", "b"]
-        mock_readkey.return_value = "\x03"
+        mock_readkey.return_value = readchar.key.CTRL_C
 
         with pytest.raises(KeyboardInterrupt):
             select_with_search(options)
@@ -853,7 +895,7 @@ class TestSelectWithSearch:
         """Test select_with_search builds search query from characters."""
         options = ["apple", "apricot", "application", "banana"]
         # Type 'app', then Enter (should match multiple)
-        mock_readkey.side_effect = ["a", "p", "p", "\r"]
+        mock_readkey.side_effect = ["a", "p", "p", readchar.key.ENTER]
 
         result = select_with_search(options)
         assert result == "apple"
@@ -865,7 +907,7 @@ class TestSelectWithSearch:
         """Test select_with_search backspace restores all options."""
         options = ["apple", "banana", "cherry"]
         # Type 'z' (no matches), backspace (restore), Enter
-        mock_readkey.side_effect = ["z", "\x08", "\r"]
+        mock_readkey.side_effect = ["z", readchar.key.BACKSPACE, readchar.key.ENTER]
 
         result = select_with_search(options)
         assert result == "apple"
@@ -877,7 +919,7 @@ class TestSelectWithSearch:
         """Test select_with_search is case insensitive."""
         options = ["Apple", "Banana", "Cherry"]
         # Type 'app', then Enter
-        mock_readkey.side_effect = ["a", "p", "p", "\r"]
+        mock_readkey.side_effect = ["a", "p", "p", readchar.key.ENTER]
 
         result = select_with_search(options)
         assert result == "Apple"
@@ -892,7 +934,7 @@ class TestSelectWithSearch:
             SelectOption("opt2", "Second Option"),
         ]
         # Type 'second', Enter
-        mock_readkey.side_effect = ["s", "e", "\r"]
+        mock_readkey.side_effect = ["s", "e", readchar.key.ENTER]
 
         result = select_with_search(options)
         assert result == "opt2"
@@ -903,7 +945,7 @@ class TestSelectWithSearch:
     ) -> None:
         """Test select_with_search limits display to 10 items."""
         options = [f"option{i}" for i in range(20)]
-        mock_readkey.return_value = "\r"
+        mock_readkey.return_value = readchar.key.ENTER
 
         result = select_with_search(options)
         assert result == "option0"
@@ -917,34 +959,48 @@ class TestSelectWithSearch:
         """Test select_with_search with printable characters added to search."""
         options = ["apple", "apricot", "banana", "cherry"]
         # Type 'ap', should find apple/apricot, then Enter on apple
-        mock_readkey.side_effect = ["a", "p", "\r"]
+        mock_readkey.side_effect = ["a", "p", readchar.key.ENTER]
 
         result = select_with_search(options)
         assert result == "apple"
 
-    @pytest.mark.parametrize(
-        "keys,expected",
-        [
-            (["\r"], "item1"),
-            (["\x1b[B", "\r"], "item2"),
-            (["\x1b[B", "\x1b[B", "\x1b[A", "\r"], "item2"),
-        ],
-    )
     @patch("sys.stdout")
-    def test_select_with_search_parametrized(
-        self,
-        mock_stdout: Mock,
-        mock_console: Mock,
-        mock_readkey: Mock,
-        keys: list[str],
-        expected: str,
+    def test_select_with_search_enter_immediately(
+        self, mock_stdout: Mock, mock_console: Mock, mock_readkey: Mock
     ) -> None:
-        """Test select_with_search with various key sequences."""
+        """Test select_with_search with Enter immediately."""
         options = ["item1", "item2", "item3"]
-        mock_readkey.side_effect = keys
+        mock_readkey.side_effect = [readchar.key.ENTER]
 
         result = select_with_search(options)
-        assert result == expected
+        assert result == "item1"
+
+    @patch("sys.stdout")
+    def test_select_with_search_down_then_enter(
+        self, mock_stdout: Mock, mock_console: Mock, mock_readkey: Mock
+    ) -> None:
+        """Test select_with_search with Down then Enter."""
+        options = ["item1", "item2", "item3"]
+        mock_readkey.side_effect = [readchar.key.DOWN, readchar.key.ENTER]
+
+        result = select_with_search(options)
+        assert result == "item2"
+
+    @patch("sys.stdout")
+    def test_select_with_search_down_down_up_enter(
+        self, mock_stdout: Mock, mock_console: Mock, mock_readkey: Mock
+    ) -> None:
+        """Test select_with_search with Down, Down, Up, Enter."""
+        options = ["item1", "item2", "item3"]
+        mock_readkey.side_effect = [
+            readchar.key.DOWN,
+            readchar.key.DOWN,
+            readchar.key.UP,
+            readchar.key.ENTER,
+        ]
+
+        result = select_with_search(options)
+        assert result == "item2"
 
 
 # ============================================================================
@@ -972,7 +1028,7 @@ class TestInteractiveIntegration:
 
     def test_select_option_normalization(self, mock_console: Mock, mock_readkey: Mock) -> None:
         """Test that list of strings are normalized to SelectOption objects."""
-        mock_readkey.return_value = "\r"
+        mock_readkey.return_value = readchar.key.ENTER
 
         # select normalizes list[str] to list[SelectOption] internally
         result = select(["a", "b", "c"])
@@ -983,7 +1039,7 @@ class TestInteractiveIntegration:
     ) -> None:
         """Test multi_select respects max_selections with defaults."""
         options = [SelectOption(str(i), f"Option {i}") for i in range(5)]
-        mock_readkey.return_value = "\r"
+        mock_readkey.return_value = readchar.key.ENTER
 
         result = multi_select(
             options,

@@ -437,20 +437,43 @@ class ValidationService:
 
     @staticmethod
     def _count_substantive_sentences(content: str) -> int:
-        """Count substantive sentences or bullet points in content."""
+        """Count substantive sentences or bullet/numbered list items in content.
 
+        This method counts actionable statements using multiple heuristics:
+        1. Bullet points (lines starting with - or *)
+        2. Numbered list items (lines starting with digits followed by . or ))
+        3. Sentence boundaries (. ! ? followed by whitespace or end)
+
+        The sentence regex uses a negative lookbehind to avoid splitting on
+        numbered list patterns like "1. " or "2. ".
+        """
         text = content.strip()
         if not text:
             return 0
 
-        sentence_candidates = [
-            segment.strip() for segment in re.split(r"[.!?]+\s+|\n+", text) if segment.strip()
-        ]
-        bullet_count = sum(1 for line in text.splitlines() if line.strip().startswith(("-", "*")))
+        lines = text.splitlines()
 
-        if bullet_count > len(sentence_candidates):
-            return bullet_count
-        return len(sentence_candidates)
+        # Count bullet points (- or *)
+        bullet_count = sum(1 for line in lines if line.strip().startswith(("-", "*")))
+
+        # Count numbered list items (e.g., "1.", "2)", "10.")
+        numbered_pattern = re.compile(r"^\s*\d+[.)]\s+\S")
+        numbered_count = sum(1 for line in lines if numbered_pattern.match(line))
+
+        list_count = bullet_count + numbered_count
+
+        # If we have list items, that's a good count of actionable statements
+        if list_count > 0:
+            return list_count
+
+        # Fall back to sentence counting, avoiding false splits on numbered lists
+        # Use negative lookbehind to skip patterns like "1. " or "Fig. "
+        sentence_pattern = re.compile(r"(?<!\d)(?<!\b[A-Z])\.(?:\s+|$)|[!?]+(?:\s+|$)")
+        # Split on sentence boundaries and filter empty segments
+        segments = sentence_pattern.split(text)
+        sentence_count = sum(1 for seg in segments if seg and seg.strip())
+
+        return max(sentence_count, 1)  # At least 1 if there's any content
 
     @staticmethod
     def _parse_version(version: str) -> tuple[int, int, int] | None:

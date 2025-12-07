@@ -204,7 +204,7 @@ def validate(
                     "priority_counts": priority_counts,
                     "category_counts": category_counts,
                     "focus_areas": focus_areas,
-                    "guidance": "Use CLI output as a cross-check. Provide narrative rationale for each fix.",
+                    "guidance": "This validator uses pattern-matching heuristics (keyword detection, sentence counting) rather than semantic content analysis. Use findings as supporting evidence, not definitive judgments.",
                 },
             }
             print(json.dumps(output, indent=2))
@@ -233,7 +233,9 @@ def validate(
                         print(f"  - {category.capitalize()}: {count}")
 
             print_info(
-                "\nUse these findings as supporting evidence. Lead with your own qualitative assessment and explain each remediation step."
+                "\nNote: This validator uses pattern-matching heuristics (keyword detection, "
+                "sentence counting) rather than semantic content analysis. Use findings as "
+                "supporting evidence, not definitive judgments."
             )
 
             if not result.is_valid:
@@ -356,25 +358,7 @@ def check(
                 print_info(f"File exists at {constitution_path} but has no content")
             raise typer.Exit(code=1)
 
-        # Check 3: Has minimum content (basic heuristic)
-        min_length = 100  # At least 100 characters
-        if len(content.strip()) < min_length:
-            if json_output:
-                output = {
-                    "exists": True,
-                    "path": str(constitution_path),
-                    "is_empty": False,
-                    "content_length": len(content),
-                    "warning": f"Constitution content is very short ({len(content)} chars)",
-                    "recommendation": "Content may be incomplete",
-                }
-                print(json.dumps(output, indent=2))
-            else:
-                print_warning(f"Constitution content is very short ({len(content)} chars)")
-                print_info("Content may be incomplete")
-            # Don't exit with error - just warn
-
-        # All checks passed
+        # All checks passed (file exists and has content)
         if json_output:
             output = {
                 "exists": True,

@@ -748,6 +748,10 @@ def validate_plan(
         for message in issues:
             print_error(f"- {message}")
         print_info(f"\nValidation results saved to: {validation_path}")
+        print_info(
+            "Note: This validator uses pattern-matching (keyword detection, placeholder "
+            "checking) rather than semantic content analysis."
+        )
     else:
         print_success("All validation checks passed!")
         print_info(f"Validation results saved to: {validation_path}")
@@ -1078,16 +1082,39 @@ def _section_contains_pending(plan_text: str, heading: str) -> bool:
 def _is_pending(value: str) -> bool:
     """Determine if a section is effectively pending or empty.
 
+    This function checks for common placeholder patterns that indicate
+    a section needs to be filled in. It uses exact matching for known
+    placeholder values rather than semantic content analysis.
+
     Args:
         value: Section text to check
 
     Returns:
-        True if value is empty or a pending placeholder
+        True if value is empty or matches a known placeholder pattern
     """
     stripped = value.strip().lower()
     if not stripped:
         return True
-    return stripped in {"pending", "- pending", "tbd", "n/a"}
+
+    # Known placeholder patterns (exact match after stripping)
+    placeholder_values = {
+        "pending",
+        "- pending",
+        "tbd",
+        "to be determined",
+        "- tbd",
+        "n/a",
+        "- n/a",
+        "todo",
+        "- todo",
+        "...",
+        "- ...",
+        "[pending]",
+        "[tbd]",
+        "[todo]",
+    }
+
+    return stripped in placeholder_values
 
 
 def _preview_list_section(plan_text: str, heading: str, limit: int = 3) -> str:
@@ -1237,19 +1264,32 @@ def _save_validation_results(
 
 """
 
+    # Common next steps section
+    next_steps = (
+        "\n## Next Steps\n\n"
+        "- `/oak.plan-tasks` — Generate implementation tasks\n"
+        "- `/oak.plan-implement` — Prepare implementation context\n"
+    )
+
     if issues:
         content = header + (
             f"Found {len(issues)} issue(s) that should be addressed before implementation:\n\n"
         )
         for i, issue in enumerate(issues, 1):
             content += f"{i}. {issue}\n"
-        content += "\n**Recommendation:** Address these issues before running implementation.\n"
+        content += "\n**Recommendation:** Address these issues, then continue with next steps.\n"
+        content += (
+            "\n> **Note:** This validator uses pattern-matching heuristics (keyword detection, "
+            "placeholder checking) rather than semantic content analysis. Use findings as "
+            "supporting evidence, not definitive judgments.\n"
+        )
+        content += next_steps
     else:
         content = (
             header
-            + "All validation checks passed! The plan is complete and ready for implementation.\n\n"
+            + "All validation checks passed! The plan is complete and ready for implementation.\n"
         )
-        content += "**Next Step:** Begin implementation.\n"
+        content += next_steps
 
     validation_path.write_text(content, encoding="utf-8")
 

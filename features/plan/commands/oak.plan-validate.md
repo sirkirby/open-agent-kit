@@ -1,6 +1,9 @@
 ---
 description: Review implementation artifacts for a plan and surface gaps.
 handoffs:
+  - label: Generate Tasks
+    agent: oak.plan-tasks
+    prompt: Generate implementation tasks from the validated plan.
   - label: Implement Plan
     agent: oak.plan-implement
     prompt: Implement the plan and its associated tasks.

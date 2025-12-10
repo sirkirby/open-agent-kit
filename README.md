@@ -239,12 +239,14 @@ agent_capabilities:
     has_background_agents: true
     has_native_web: true
     has_mcp: true
-    research_strategy: null
+    reasoning_tier: high
+    context_handling: large
   copilot:
     has_background_agents: false
     has_native_web: false
     has_mcp: false
-    research_strategy: null
+    reasoning_tier: variable
+    context_handling: medium
 ```
 
 ### Agent Capabilities
@@ -256,14 +258,18 @@ Agent capabilities control how feature commands are rendered for each agent. The
 | `has_background_agents` | Agent supports spawning background/parallel agents |
 | `has_native_web` | Agent has built-in web search/fetch capabilities |
 | `has_mcp` | Agent supports Model Context Protocol servers |
-| `research_strategy` | Custom research approach (e.g., "deep_research") |
+| `reasoning_tier` | Agent reasoning capability: `high`, `medium`, `basic`, or `variable` |
+| `context_handling` | Context window size: `large` (1M+), `medium` (100K+), or `small` |
+| `model_consistency` | Model availability: `high` (first-party), `medium`, or `variable` |
+
+**Capability Tiers**: Commands are rendered differently based on agent capabilities. High-reasoning agents (Claude, Codex, Gemini) receive concise, autonomous prompts. Variable-reasoning agents (Copilot, Cursor, Windsurf) receive more detailed step-by-step guidance.
 
 **Customizing Capabilities:**
 
 1. Edit `.oak/config.yaml` to change capability values
 2. Run `oak feature refresh` to re-render commands with new capabilities
 
-This allows you to enable or disable agent-specific features without upgrading the package.
+This allows you to tune command prompts based on your agent's actual capabilities.
 
 ## AI Agent Integration
 

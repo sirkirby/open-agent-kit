@@ -23,4 +23,10 @@ capabilities:
   has_mcp: true                 # Full MCP support in VS Code
   research_strategy: "Use Copilot's built-in web tools + keyless MCP"
 
+  # Capability tiers for prompt complexity adaptation
+  # Copilot can use various models - capabilities depend on user's model selection
+  reasoning_tier: variable      # high | medium | basic | variable - depends on selected model
+  context_handling: medium      # large | medium | small - varies by model
+  model_consistency: variable   # high | medium | variable - user can switch models
+
 settings: {}

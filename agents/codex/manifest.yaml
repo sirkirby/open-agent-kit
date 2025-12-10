@@ -23,4 +23,10 @@ capabilities:
   has_mcp: false                # Usually no MCP support
   research_strategy: "Offline/spec-only; degrade gracefully to general knowledge"
 
+  # Capability tiers for prompt complexity adaptation
+  # Codex uses OpenAI's first-party models
+  reasoning_tier: high          # high | medium | basic - o-series models excel at reasoning
+  context_handling: large       # large | medium | small - good context window
+  model_consistency: high       # high | medium | variable - first-party models are consistent
+
 settings: {}

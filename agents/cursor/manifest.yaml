@@ -24,4 +24,10 @@ capabilities:
   has_mcp: true                 # Full MCP support via configuration
   research_strategy: "Deep research via MCP web-search + background agents"
 
+  # Capability tiers for prompt complexity adaptation
+  # Cursor can use various models - capabilities depend on user's model selection
+  reasoning_tier: variable      # high | medium | basic | variable - depends on selected model
+  context_handling: large       # large | medium | small - Cursor optimizes context well
+  model_consistency: variable   # high | medium | variable - user can switch models
+
 settings: {}

@@ -190,9 +190,22 @@ class AgentService:
                 and overrides.background_agent_instructions is not None
             ):
                 context["background_agent_instructions"] = overrides.background_agent_instructions
+            # Check for capability tier overrides
+            if hasattr(overrides, "reasoning_tier") and overrides.reasoning_tier is not None:
+                context["reasoning_tier"] = overrides.reasoning_tier
+            if hasattr(overrides, "context_handling") and overrides.context_handling is not None:
+                context["context_handling"] = overrides.context_handling
+            if hasattr(overrides, "model_consistency") and overrides.model_consistency is not None:
+                context["model_consistency"] = overrides.model_consistency
             # Add any custom capabilities
             if overrides.custom:
                 context.update(overrides.custom)
+
+        # Recalculate convenience booleans after any overrides
+        reasoning_tier = context.get("reasoning_tier", "medium")
+        context["is_high_reasoning"] = reasoning_tier == "high"
+        context["is_basic_reasoning"] = reasoning_tier == "basic"
+        context["is_variable_reasoning"] = reasoning_tier == "variable"
 
         return context
 
@@ -216,6 +229,10 @@ class AgentService:
             "has_native_web": caps.has_native_web,
             "has_mcp": caps.has_mcp,
             "research_strategy": caps.research_strategy,
+            # Capability tiers for adaptive prompts
+            "reasoning_tier": caps.reasoning_tier,
+            "context_handling": caps.context_handling,
+            "model_consistency": caps.model_consistency,
         }
 
     def get_command_filename(self, agent_type: str, command_name: str) -> str:

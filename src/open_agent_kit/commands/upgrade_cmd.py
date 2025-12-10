@@ -85,6 +85,7 @@ def upgrade_command(
     has_upgrades = (
         plan["commands"]
         or plan["templates"]
+        or plan.get("obsolete_templates", [])
         or plan["ide_settings"]
         or plan.get("migrations", [])
         or plan.get("structural_repairs", [])
@@ -151,6 +152,13 @@ def _display_upgrade_plan(plan: dict, dry_run: bool) -> None:
         if plan.get("templates_customized"):
             sections.append(f"\n[yellow]⚠[/yellow]  {WARNING_MESSAGES['templates_customized']}")
 
+    # Obsolete templates to remove
+    if plan.get("obsolete_templates"):
+        obsolete_list = "\n".join([f"  • {tpl}" for tpl in plan["obsolete_templates"]])
+        sections.append(
+            f"[cyan]Obsolete Templates[/cyan] ({len(plan['obsolete_templates'])} files to remove)\n{obsolete_list}"
+        )
+
     # IDE settings upgrades
     if plan["ide_settings"]:
         ide_list = "\n".join([f"  • {ide}" for ide in plan["ide_settings"]])
@@ -188,6 +196,8 @@ def _display_upgrade_results(results: UpgradeResults) -> None:
     if results.get("commands", {}).get("upgraded"):
         steps += 1
     if results.get("templates", {}).get("upgraded"):
+        steps += 1
+    if results.get("obsolete_removed", {}).get("upgraded"):
         steps += 1
     if results.get("ide_settings", {}).get("upgraded"):
         steps += 1
@@ -235,6 +245,22 @@ def _display_upgrade_results(results: UpgradeResults) -> None:
             tracker.start_step("Template upgrade failures")
             tracker.fail_step(
                 f"Failed to upgrade {len(failed)} template(s)",
+                ", ".join(failed),
+            )
+
+    # Obsolete template removal
+    if results.get("obsolete_removed"):
+        upgraded = results["obsolete_removed"]["upgraded"]
+        failed = results["obsolete_removed"]["failed"]
+
+        if upgraded:
+            tracker.start_step(f"Removing {len(upgraded)} obsolete template(s)")
+            tracker.complete_step(f"Removed {len(upgraded)} obsolete template(s)")
+
+        if failed:
+            tracker.start_step("Obsolete removal failures")
+            tracker.fail_step(
+                f"Failed to remove {len(failed)} template(s)",
                 ", ".join(failed),
             )
 
@@ -295,11 +321,17 @@ def _display_whats_new(results: UpgradeResults) -> None:
     """
     commands_upgraded = len(results.get("commands", {}).get("upgraded", []))
     templates_upgraded = len(results.get("templates", {}).get("upgraded", []))
+    obsolete_removed = len(results.get("obsolete_removed", {}).get("upgraded", []))
     ide_settings_upgraded = len(results.get("ide_settings", {}).get("upgraded", []))
     version_updated = results.get("version_updated", False)
 
     # Build message based on what was upgraded
-    if commands_upgraded > 0 or templates_upgraded > 0 or ide_settings_upgraded > 0:
+    if (
+        commands_upgraded > 0
+        or templates_upgraded > 0
+        or obsolete_removed > 0
+        or ide_settings_upgraded > 0
+    ):
         # Files were upgraded
         message_parts = [f"[bold green]{UPGRADE_MESSAGES['whats_new_title']}[/bold green]\n\n"]
 
@@ -312,6 +344,9 @@ def _display_whats_new(results: UpgradeResults) -> None:
             message_parts.append(
                 f"✓ {SUCCESS_MESSAGES['upgraded_templates'].format(count=templates_upgraded)}\n"
             )
+
+        if obsolete_removed > 0:
+            message_parts.append(f"✓ Removed {obsolete_removed} obsolete template(s)\n")
 
         if ide_settings_upgraded > 0:
             message_parts.append(f"✓ Upgraded IDE settings for {ide_settings_upgraded} IDE(s)\n")

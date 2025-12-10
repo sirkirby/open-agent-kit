@@ -32,6 +32,7 @@ class UpgradeResults(TypedDict):
     templates: UpgradeCategoryResults
     ide_settings: UpgradeCategoryResults
     migrations: UpgradeCategoryResults
+    obsolete_removed: UpgradeCategoryResults
     structural_repairs: list[str]
     version_updated: bool
 
@@ -134,6 +135,7 @@ class UpgradeService:
             "commands": [],
             "templates": [],
             "templates_customized": False,
+            "obsolete_templates": [],
             "ide_settings": [],
             "migrations": [],
             "structural_repairs": [],
@@ -157,6 +159,8 @@ class UpgradeService:
             upgradeable_templates = self._get_upgradeable_templates()
             plan["templates"] = upgradeable_templates
             plan["templates_customized"] = self._are_templates_customized()
+            # Also detect obsolete templates that should be removed
+            plan["obsolete_templates"] = self._get_obsolete_templates()
 
         # Plan IDE settings upgrades (only for configured IDEs)
         if ide_settings:
@@ -200,6 +204,7 @@ class UpgradeService:
             "templates": {"upgraded": [], "failed": []},
             "ide_settings": {"upgraded": [], "failed": []},
             "migrations": {"upgraded": [], "failed": []},
+            "obsolete_removed": {"upgraded": [], "failed": []},
             "structural_repairs": [],
             "version_updated": False,
         }
@@ -223,6 +228,14 @@ class UpgradeService:
                 results["templates"]["upgraded"].append(template)
             except Exception as e:
                 results["templates"]["failed"].append(f"{template}: {e}")
+
+        # Remove obsolete templates
+        for obsolete in plan.get("obsolete_templates", []):
+            try:
+                self._remove_obsolete_template(obsolete)
+                results["obsolete_removed"]["upgraded"].append(obsolete)
+            except Exception as e:
+                results["obsolete_removed"]["failed"].append(f"{obsolete}: {e}")
 
         # Upgrade IDE settings
         for ide in plan["ide_settings"]:
@@ -253,6 +266,7 @@ class UpgradeService:
         total_upgraded = (
             len(results["commands"]["upgraded"])
             + len(results["templates"]["upgraded"])
+            + len(results["obsolete_removed"]["upgraded"])
             + len(results["ide_settings"]["upgraded"])
             + len(results["migrations"]["upgraded"])
             + len(results["structural_repairs"])
@@ -352,8 +366,8 @@ class UpgradeService:
         """
         upgradeable = []
 
-        # Template file extensions to check
-        extensions = ["*.md", "*.yaml", "*.json"]
+        # Template file extensions to check (use recursive glob **)
+        extensions = ["**/*.md", "**/*.yaml", "**/*.json"]
 
         # Get enabled features from config
         config = self.config_service.load_config()
@@ -369,8 +383,10 @@ class UpgradeService:
 
             for ext in extensions:
                 for package_file in feature_templates_dir.glob(ext):
-                    # Template name format: feature/filename.ext
-                    template_name = f"{feature_name}/{package_file.name}"
+                    # Get relative path from templates dir (preserves subdirectories)
+                    relative_path = package_file.relative_to(feature_templates_dir)
+                    # Template name format: feature/relative/path.ext
+                    template_name = f"{feature_name}/{relative_path}"
 
                     try:
                         # Project templates are in .oak/features/{feature}/templates/
@@ -380,7 +396,7 @@ class UpgradeService:
                             / "features"
                             / feature_name
                             / "templates"
-                            / package_file.name
+                            / relative_path
                         )
 
                         if project_path.exists():
@@ -430,30 +446,107 @@ class UpgradeService:
         """Upgrade a single template.
 
         Args:
-            template_name: Template name (e.g., "rfc/engineering.md")
+            template_name: Template name (e.g., "rfc/engineering.md" or "constitution/includes/foo.md")
         """
-        # Parse template name: "feature/filename.ext"
+        # Parse template name: "feature/relative/path.ext"
         parts = template_name.split("/", 1)
         if len(parts) != 2:
             return
 
-        feature_name, filename = parts
+        feature_name, relative_path = parts
 
         # Source from package features directory
-        source_path = self.package_features_dir / feature_name / "templates" / filename
+        source_path = self.package_features_dir / feature_name / "templates" / relative_path
 
         # Destination in project .oak/features/{feature}/templates/
-        dest_path = self.project_root / ".oak" / "features" / feature_name / "templates" / filename
+        dest_path = (
+            self.project_root / ".oak" / "features" / feature_name / "templates" / relative_path
+        )
 
         if not source_path.exists():
             return
 
-        # Ensure directory exists
+        # Ensure directory exists (handles subdirectories like includes/)
         ensure_dir(dest_path.parent)
 
         # Copy content from package to project
         content = read_file(source_path)
         write_file(dest_path, content)
+
+    def _get_obsolete_templates(self) -> list[str]:
+        """Get templates that exist in project but not in package (obsolete).
+
+        Returns:
+            List of obsolete template names to remove (e.g., "constitution/example-decisions.json")
+        """
+        from open_agent_kit.services.feature_service import FeatureService
+
+        obsolete = []
+
+        # Get enabled features from config
+        config = self.config_service.load_config()
+        enabled_features = (
+            config.features.enabled if config.features.enabled else SUPPORTED_FEATURES
+        )
+
+        feature_service = FeatureService(self.project_root)
+
+        for feature_name in enabled_features:
+            # Get the manifest to know what templates SHOULD exist
+            manifest = feature_service.get_feature_manifest(feature_name)
+            if not manifest:
+                continue
+
+            expected_templates = set(manifest.templates)
+
+            # Check what templates actually exist in the project
+            project_templates_dir = (
+                self.project_root / ".oak" / "features" / feature_name / "templates"
+            )
+            if not project_templates_dir.exists():
+                continue
+
+            # Recursively find all template files in project
+            extensions = ["**/*.md", "**/*.yaml", "**/*.json"]
+            for ext in extensions:
+                for project_file in project_templates_dir.glob(ext):
+                    relative_path = project_file.relative_to(project_templates_dir)
+                    relative_str = str(relative_path)
+
+                    # If file exists in project but not in manifest, it's obsolete
+                    if relative_str not in expected_templates:
+                        obsolete.append(f"{feature_name}/{relative_str}")
+
+        return obsolete
+
+    def _remove_obsolete_template(self, template_name: str) -> None:
+        """Remove an obsolete template file.
+
+        Args:
+            template_name: Template name (e.g., "constitution/example-decisions.json")
+        """
+        from open_agent_kit.utils import cleanup_empty_directories
+
+        # Parse template name: "feature/relative/path.ext"
+        parts = template_name.split("/", 1)
+        if len(parts) != 2:
+            return
+
+        feature_name, relative_path = parts
+
+        # File to remove
+        file_path = (
+            self.project_root / ".oak" / "features" / feature_name / "templates" / relative_path
+        )
+
+        if file_path.exists():
+            file_path.unlink()
+
+            # Clean up empty parent directories (e.g., if we removed last file in includes/)
+            cleanup_empty_directories(
+                file_path.parent,
+                self.project_root / ".oak" / "features" / feature_name / "templates",
+            )
 
     def _upgrade_ide_settings(self, ide: str) -> None:
         """Upgrade IDE settings.

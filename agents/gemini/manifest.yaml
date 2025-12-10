@@ -24,4 +24,10 @@ capabilities:
   has_mcp: true                 # Supports local/remote MCP servers
   research_strategy: "Use built-in search + fetch as primary; MCP for extras"
 
+  # Capability tiers for prompt complexity adaptation
+  # Gemini CLI uses Google's first-party models
+  reasoning_tier: high          # high | medium | basic - Gemini 2.x models excel at reasoning
+  context_handling: large       # large | medium | small - excellent context window (1M+)
+  model_consistency: high       # high | medium | variable - first-party models are consistent
+
 settings: {}

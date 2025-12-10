@@ -24,6 +24,237 @@ constitution_app = typer.Typer(
 )
 
 
+@constitution_app.command("create")
+def create(
+    project_name: str = typer.Option(..., "--project-name", help="Project name"),
+    author: str = typer.Option(..., "--author", help="Author name"),
+    tech_stack: str | None = typer.Option(None, "--tech-stack", help="Technology stack"),
+    description: str | None = typer.Option(None, "--description", help="Project description"),
+    context_file: str | None = typer.Option(
+        None, "--context-file", help="JSON file with decision context"
+    ),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing constitution"),
+    skip_agent_files: bool = typer.Option(
+        False, "--skip-agent-files", help="Skip automatic agent file generation"
+    ),
+    skip_validation: bool = typer.Option(
+        False, "--skip-validation", help="Skip automatic validation"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON for agent parsing"),
+) -> None:
+    """Create constitution with full workflow (recommended for agents).
+
+    This is the PRIMARY command for constitution creation. It combines:
+    1. Constitution file creation (from metadata + decision context)
+    2. Agent instruction file generation (automatic)
+    3. Validation (automatic)
+
+    The agent's job is to gather user decisions and create a decision context JSON file.
+    This command handles all the deterministic steps automatically.
+
+    Example:
+        # Basic usage with decision context
+        oak constitution create --project-name "MyProject" --author "Jane" --context-file decisions.json
+
+        # Full workflow with JSON output for agent parsing
+        oak constitution create --project-name "MyProject" --author "Jane" \\
+            --tech-stack "FastAPI, Python" --description "API service" \\
+            --context-file decisions.json --json
+
+        # Skip optional steps
+        oak constitution create --project-name "MyProject" --author "Jane" \\
+            --context-file decisions.json --skip-validation
+    """
+    from pathlib import Path
+
+    from open_agent_kit.services.agent_service import AgentService
+
+    project_root = get_project_root()
+    if not project_root:
+        print_error(ERROR_MESSAGES["no_oak_dir"])
+        raise typer.Exit(code=1)
+
+    results: dict = {
+        "success": False,
+        "constitution_path": None,
+        "agent_files": {},
+        "validation": None,
+        "errors": [],
+    }
+
+    # Step 1: Create constitution file
+    service = ConstitutionService.from_config(project_root)
+    constitution_path = service.get_constitution_path()
+
+    if constitution_path.exists() and not force:
+        error_msg = f"Constitution already exists at {constitution_path}. Use --force to overwrite."
+        if json_output:
+            results["errors"].append(error_msg)
+            print(json.dumps(results, indent=2))
+        else:
+            print_error(error_msg)
+        raise typer.Exit(code=1)
+
+    if force and constitution_path.exists():
+        if not json_output:
+            print_warning(f"Overwriting existing constitution at {constitution_path}")
+        constitution_path.unlink()
+
+    # Load decision context if provided
+    decision_context = None
+    if context_file:
+        try:
+            from pydantic import ValidationError
+
+            from open_agent_kit.models.constitution import DecisionContext
+
+            context_path = Path(context_file)
+            if not context_path.exists():
+                error_msg = f"Context file not found: {context_file}"
+                if json_output:
+                    results["errors"].append(error_msg)
+                    print(json.dumps(results, indent=2))
+                else:
+                    print_error(error_msg)
+                raise typer.Exit(code=1)
+
+            with open(context_path) as f:
+                context_data = json.load(f)
+
+            decision_context = DecisionContext(**context_data)
+            if not json_output:
+                print_info(f"Loaded decision context from {context_file}")
+
+        except json.JSONDecodeError as e:
+            error_msg = f"Invalid JSON in context file: {e}"
+            if json_output:
+                results["errors"].append(error_msg)
+                print(json.dumps(results, indent=2))
+            else:
+                print_error(error_msg)
+            raise typer.Exit(code=1)
+        except ValidationError as e:
+            error_details = "\n".join([f"  - {err['loc'][0]}: {err['msg']}" for err in e.errors()])
+            error_msg = f"Invalid decision context:\n{error_details}"
+            if json_output:
+                results["errors"].append(error_msg)
+                print(json.dumps(results, indent=2))
+            else:
+                print_error(error_msg)
+            raise typer.Exit(code=1)
+
+    try:
+        if not json_output:
+            print_info(INFO_MESSAGES["generating_constitution"])
+
+        constitution = service.create(
+            project_name=project_name,
+            author=author,
+            tech_stack=tech_stack,
+            description=description,
+            decision_context=decision_context,
+        )
+
+        results["constitution_path"] = str(constitution.file_path)
+
+        if not json_output:
+            print_success(f"Constitution created at {constitution.file_path}")
+
+    except Exception as e:
+        error_msg = f"Error creating constitution: {e}"
+        if json_output:
+            results["errors"].append(error_msg)
+            print(json.dumps(results, indent=2))
+        else:
+            print_error(error_msg)
+        raise typer.Exit(code=1)
+
+    # Step 2: Generate agent instruction files (unless skipped)
+    if not skip_agent_files:
+        try:
+            if not json_output:
+                print_info(INFO_MESSAGES["generating_agent_files"])
+
+            agent_service = AgentService(project_root)
+            agent_results = agent_service.update_agent_instructions_from_constitution(
+                constitution_path
+            )
+
+            results["agent_files"] = {
+                "updated": agent_results.get("updated", []),
+                "created": agent_results.get("created", []),
+                "skipped": agent_results.get("skipped", []),
+            }
+
+            if not json_output:
+                if agent_results["updated"]:
+                    print_success(f"Updated agent files: {', '.join(agent_results['updated'])}")
+                if agent_results["created"]:
+                    print_success(f"Created agent files: {', '.join(agent_results['created'])}")
+                if agent_results["skipped"]:
+                    print_info(f"Skipped (already updated): {', '.join(agent_results['skipped'])}")
+
+        except Exception as e:
+            error_msg = f"Error updating agent files: {e}"
+            results["errors"].append(error_msg)
+            if not json_output:
+                print_warning(error_msg)
+            # Don't exit - agent files are important but not fatal
+
+    # Step 3: Validate constitution (unless skipped)
+    if not skip_validation:
+        try:
+            validation_service = ValidationService.from_config()
+            constitution = service.load()
+            validation_result = validation_service.validate(constitution)
+
+            results["validation"] = {
+                "is_valid": validation_result.is_valid,
+                "total_issues": validation_result.total_issues,
+                "high_priority": validation_result.high_priority_count,
+            }
+
+            if not json_output:
+                if validation_result.is_valid:
+                    print_success("Validation passed")
+                else:
+                    print_warning(
+                        f"Validation found {validation_result.total_issues} issues "
+                        f"({validation_result.high_priority_count} high priority)"
+                    )
+                    print_info("Run 'oak constitution validate --json' for details")
+
+        except Exception as e:
+            error_msg = f"Error validating constitution: {e}"
+            results["errors"].append(error_msg)
+            if not json_output:
+                print_warning(error_msg)
+            # Don't exit - validation is informational
+
+    # Final output
+    results["success"] = len(results["errors"]) == 0 or (results["constitution_path"] is not None)
+
+    if json_output:
+        print(json.dumps(results, indent=2))
+    else:
+        print()
+        if results["success"]:
+            print_success("✓ Constitution creation complete!")
+            print_info(f"  Constitution: {results['constitution_path']}")
+            if results["agent_files"]:
+                total_files = len(results["agent_files"].get("updated", [])) + len(
+                    results["agent_files"].get("created", [])
+                )
+                print_info(f"  Agent files: {total_files} updated/created")
+            print_info("\nNext steps:")
+            print_info("  1. Review the generated constitution")
+            print_info("  2. Commit changes to version control")
+        else:
+            print_error("Constitution creation completed with errors")
+            for error in results["errors"]:
+                print_error(f"  - {error}")
+
+
 @constitution_app.command("create-file")
 def create_file(
     project_name: str = typer.Option(..., "--project-name", help="Project name"),

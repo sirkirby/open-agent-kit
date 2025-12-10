@@ -25,6 +25,11 @@ class AgentCapabilities(BaseModel):
     command templates based on what each agent can do. For example,
     Claude Code can use background agents for parallel research, while
     Codex CLI cannot.
+
+    Capability tiers enable adaptive prompt complexity:
+    - reasoning_tier: Determines how much autonomous decision-making to allow
+    - context_handling: Affects prompt length and detail level
+    - model_consistency: Influences reliance on structured vs flexible prompts
     """
 
     has_background_agents: bool = Field(
@@ -46,6 +51,20 @@ class AgentCapabilities(BaseModel):
     research_strategy: str = Field(
         default="Use general knowledge and codebase exploration.",
         description="Agent-specific guidance for research tasks",
+    )
+
+    # Capability tiers for adaptive prompt complexity
+    reasoning_tier: str = Field(
+        default="medium",
+        description="Reasoning capability: 'high' (autonomous), 'medium' (guided), 'basic' (explicit), 'variable' (model-dependent)",
+    )
+    context_handling: str = Field(
+        default="medium",
+        description="Context window handling: 'large' (1M+), 'medium' (100K+), 'small' (<100K)",
+    )
+    model_consistency: str = Field(
+        default="variable",
+        description="Model consistency: 'high' (first-party), 'medium' (curated), 'variable' (user choice)",
     )
 
 
@@ -260,6 +279,14 @@ class AgentManifest(BaseModel):
             "has_native_web": self.capabilities.has_native_web,
             "has_mcp": self.capabilities.has_mcp,
             "research_strategy": self.capabilities.research_strategy,
+            # Capability tiers for adaptive prompt complexity
+            "reasoning_tier": self.capabilities.reasoning_tier,
+            "context_handling": self.capabilities.context_handling,
+            "model_consistency": self.capabilities.model_consistency,
+            # Convenience booleans for common tier checks
+            "is_high_reasoning": self.capabilities.reasoning_tier == "high",
+            "is_basic_reasoning": self.capabilities.reasoning_tier == "basic",
+            "is_variable_reasoning": self.capabilities.reasoning_tier == "variable",
         }
 
     def validate_installation(self, project_root: Path) -> tuple[bool, list[str]]:

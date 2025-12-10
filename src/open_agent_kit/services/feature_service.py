@@ -351,6 +351,8 @@ class FeatureService:
                 src = templates_dir / template
                 if src.exists():
                     dst = project_templates_dir / template
+                    # Ensure parent directories exist for nested templates (e.g., includes/foo.md)
+                    ensure_dir(dst.parent)
                     write_file(dst, read_file(src))
                     results["templates_copied"].append(template)
 

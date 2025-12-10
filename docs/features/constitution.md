@@ -25,6 +25,8 @@ The AI will:
 
 **For brownfield projects**: Detects and incorporates existing conventions from agent instruction files and codebase.
 
+**Adaptive prompts**: Commands are rendered based on your agent's capability tiers. High-reasoning agents receive concise prompts; variable-reasoning agents get detailed step-by-step guidance.
+
 **For existing users**: See [Constitution Upgrade Guide](docs/constitution-upgrade-guide.md) for modernization options.
 
 ## `/oak.constitution-validate`

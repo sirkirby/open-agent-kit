@@ -26,4 +26,10 @@ capabilities:
   has_mcp: true                 # First-class MCP support (local & remote)
   research_strategy: "Use Claude's web tools or keyless MCP web-search (DuckDuckGo/fetch)"
 
+  # Capability tiers for prompt complexity adaptation
+  # These inform how much reasoning and context the agent can handle
+  reasoning_tier: high          # high | medium | basic - ability to handle complex multi-step reasoning
+  context_handling: large       # large | medium | small - effective context window utilization
+  model_consistency: high       # high | medium | variable - how predictable the underlying model is
+
 settings: {}

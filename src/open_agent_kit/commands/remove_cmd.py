@@ -141,6 +141,15 @@ def remove_command(
             print_info("\nRemoval cancelled.")
             raise typer.Exit(code=0)
 
+    # Trigger pre-remove hooks (before any removal happens)
+    from open_agent_kit.services.feature_service import FeatureService
+
+    try:
+        feature_service = FeatureService(project_root)
+        feature_service.trigger_pre_remove_hooks()
+    except Exception:
+        pass  # Hook failures are not fatal
+
     # Perform removal
     removed_count = 0
     failed_count = 0

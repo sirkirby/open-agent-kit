@@ -808,6 +808,75 @@ class ConstitutionService:
 
         return results
 
+    def sync_agent_instruction_files(
+        self,
+        agents_added: list[str] | None = None,
+        agents_removed: list[str] | None = None,
+    ) -> dict[str, list[str]]:
+        """Sync agent instruction files with constitution.
+
+        This method ensures all configured agents have instruction files that
+        reference the constitution. Called when agents are added/removed.
+
+        Behavior:
+        - For added agents: Creates instruction file if missing, or appends
+          constitution reference if file exists without one
+        - For removed agents: Does NOT remove files (may have user modifications)
+
+        Args:
+            agents_added: Newly added agent types (optional)
+            agents_removed: Removed agent types (optional, for logging only)
+
+        Returns:
+            Dictionary with sync results:
+            {
+                "created": ["claude", ...],  # New files created
+                "updated": ["copilot", ...],  # Existing files updated with reference
+                "skipped": ["cursor", ...],   # Already had reference
+                "errors": ["error message", ...]
+            }
+        """
+        from open_agent_kit.services.agent_service import AgentService
+
+        results: dict[str, list[str]] = {
+            "created": [],
+            "updated": [],
+            "skipped": [],
+            "not_removed": [],  # Files we intentionally didn't remove
+            "errors": [],
+        }
+
+        # Check if constitution exists
+        if not self.exists():
+            # No constitution yet - nothing to sync
+            results["skipped"].append("(no constitution exists)")
+            return results
+
+        constitution_path = self.get_constitution_path()
+        agent_service = AgentService(self.project_root)
+
+        # Note removed agents but don't delete files (may have user content)
+        if agents_removed:
+            for agent in agents_removed:
+                results["not_removed"].append(agent)
+
+        # Update/create instruction files for added agents
+        # Actually, we should sync ALL configured agents, not just added ones,
+        # because the user might have deleted a file manually
+        if agents_added:
+            # Use existing method which handles all cases correctly
+            update_results = agent_service.update_agent_instructions_from_constitution(
+                constitution_path, mode="additive"
+            )
+
+            # Map results
+            results["created"] = update_results.get("created", [])
+            results["updated"] = update_results.get("updated", [])
+            results["skipped"] = update_results.get("skipped", [])
+            results["errors"] = update_results.get("errors", [])
+
+        return results
+
     @classmethod
     def from_config(cls, project_root: Path | None = None) -> "ConstitutionService":
         """Create service from configuration.

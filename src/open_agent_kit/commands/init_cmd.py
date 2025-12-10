@@ -325,6 +325,28 @@ def init_command(
                 tracker.fail_step("Failed to update commands", str(e))
                 # Not fatal, continue
 
+            # Trigger feature hooks for agent changes (e.g., sync constitution files)
+            if agents_added or agents_removed:
+                try:
+                    feature_svc = FeatureService(project_root)
+                    hook_results = feature_svc.trigger_agents_changed_hooks(
+                        agents_added=list(agents_added),
+                        agents_removed=list(agents_removed),
+                    )
+                    # Report any agent instruction file changes
+                    for _feature_name, result in hook_results.items():
+                        if result.get("success") and result.get("result"):
+                            hook_result = result["result"]
+                            if hook_result.get("created"):
+                                for agent in hook_result["created"]:
+                                    print_info(f"  Created instruction file for {agent}")
+                            if hook_result.get("updated"):
+                                for agent in hook_result["updated"]:
+                                    print_info(f"  Updated instruction file for {agent}")
+                except Exception:
+                    # Hook failures are not fatal
+                    pass
+
         # Update IDEs if changed
         if ides_changed:
             # Determine which IDEs were removed
@@ -364,6 +386,18 @@ def init_command(
             except Exception as e:
                 tracker.fail_step("Failed to update IDE settings", str(e))
                 # Not fatal, continue
+
+            # Trigger IDE change hooks
+            ides_added = set(selected_ides) - set(existing_ides)
+            if ides_added or ides_removed:
+                try:
+                    feature_svc = FeatureService(project_root)
+                    feature_svc.trigger_ides_changed_hooks(
+                        ides_added=list(ides_added),
+                        ides_removed=list(ides_removed),
+                    )
+                except Exception:
+                    pass  # Hook failures are not fatal
 
         # Update features if changed
         if features_changed:
@@ -413,6 +447,18 @@ def init_command(
             except Exception as e:
                 tracker.fail_step("Failed to update features", str(e))
                 # Not fatal, continue
+
+        # Trigger init_complete hook for update flow
+        try:
+            feature_svc = FeatureService(project_root)
+            feature_svc.trigger_init_complete_hooks(
+                is_fresh_install=False,
+                agents=selected_agents,
+                ides=selected_ides,
+                features=selected_features,
+            )
+        except Exception:
+            pass  # Hook failures are not fatal
 
         tracker.finish("open-agent-kit configuration updated successfully!")
         _display_update_message(existing_agents, selected_agents, existing_ides, selected_ides)
@@ -503,6 +549,19 @@ def init_command(
 
     # Step 5: Finalize
     tracker.start_step("Finalizing setup")
+
+    # Trigger init_complete hook for fresh install
+    try:
+        feature_svc = FeatureService(project_root)
+        feature_svc.trigger_init_complete_hooks(
+            is_fresh_install=True,
+            agents=selected_agents,
+            ides=selected_ides,
+            features=selected_features,
+        )
+    except Exception:
+        pass  # Hook failures are not fatal
+
     tracker.complete_step("Setup complete")
 
     # Display success message and next steps

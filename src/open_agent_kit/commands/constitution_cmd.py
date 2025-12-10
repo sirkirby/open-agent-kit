@@ -905,6 +905,90 @@ def update_agent_files(
             print_error(f"\n  Errors: {', '.join(results['errors'])}")
 
 
+@constitution_app.command("sync-agents")
+def sync_agents(
+    json_output: bool = typer.Option(False, "--json", help="Output JSON for agent parsing"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be done without making changes"
+    ),
+) -> None:
+    """Sync agent instruction files with constitution.
+
+    Ensures all configured agents have instruction files (CLAUDE.md, AGENTS.md, etc.)
+    that reference the project constitution. This is automatically called when agents
+    are added via 'oak init', but can be run manually if needed.
+
+    Behavior:
+    - Creates instruction files for agents that don't have one
+    - Appends constitution reference to existing files that don't have one
+    - Skips files that already reference the constitution
+    - Never removes files (may have user modifications)
+
+    Example:
+        oak constitution sync-agents
+        oak constitution sync-agents --dry-run
+        oak constitution sync-agents --json
+    """
+    from open_agent_kit.services.agent_service import AgentService
+
+    project_root = get_project_root()
+    if not project_root:
+        print_error(ERROR_MESSAGES["no_oak_dir"])
+        raise typer.Exit(code=1)
+
+    constitution_service = ConstitutionService.from_config(project_root)
+    agent_service = AgentService(project_root)
+
+    # Check if constitution exists
+    if not constitution_service.exists():
+        print_error("No constitution found. Create one first with 'oak constitution create'.")
+        raise typer.Exit(code=1)
+
+    if dry_run:
+        # Show what would be done
+        existing = agent_service.detect_existing_agent_instructions()
+
+        if json_output:
+            print(json.dumps(existing, indent=2, default=str))
+            return
+
+        print_info("Dry run - showing what would be done:\n")
+        for agent_type, info in existing.items():
+            if not info["exists"]:
+                print(f"  Would CREATE: {agent_type} ({info['path']})")
+            elif not info["has_constitution_ref"]:
+                print(f"  Would UPDATE: {agent_type} (append constitution reference)")
+            else:
+                print(f"  Would SKIP: {agent_type} (already has reference)")
+        print_info("\nRun without --dry-run to apply changes.")
+        return
+
+    # Perform the sync
+    results = constitution_service.sync_agent_instruction_files(
+        agents_added=list(agent_service.detect_existing_agent_instructions().keys()),
+        agents_removed=[],
+    )
+
+    if json_output:
+        print(json.dumps(results, indent=2, default=str))
+    else:
+        print_success("✓ Agent instruction files synced:\n")
+
+        if results["created"]:
+            print(f"  Created: {', '.join(results['created'])}")
+        if results["updated"]:
+            print(f"  Updated (appended reference): {', '.join(results['updated'])}")
+        if results["skipped"]:
+            skipped = [s for s in results["skipped"] if s != "(no constitution exists)"]
+            if skipped:
+                print(f"  Skipped (already has reference): {', '.join(skipped)}")
+        if results["errors"]:
+            print_error(f"\n  Errors: {', '.join(results['errors'])}")
+
+        if not results["created"] and not results["updated"]:
+            print("  All agent instruction files are already in sync.")
+
+
 @constitution_app.command("analyze")
 def analyze(
     json_output: bool = typer.Option(False, "--json", help="Output JSON for agent parsing"),

@@ -37,6 +37,11 @@ templates:
   - includes/validate_quality_rubric.md
   - includes/validate_fix_guidelines.md
 
+# Feature lifecycle hooks
+hooks:
+  # Sync agent instruction files when agents are added/removed
+  on_agents_changed: constitution:sync_agent_files
+
 # Feature-specific default configuration
 config_defaults:
   directory: oak

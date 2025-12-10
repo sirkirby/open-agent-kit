@@ -7,6 +7,67 @@ import yaml
 from pydantic import BaseModel, Field
 
 
+class LifecycleHooks(BaseModel):
+    """OAK system lifecycle hooks that features can subscribe to.
+
+    Features declare subscriptions to OAK system events in their manifest.yaml.
+    When an event occurs, OAK calls the specified handler for each subscribed feature.
+
+    Hook values use format: "feature:action" (e.g., "constitution:sync_agent_files")
+    The feature name routes to the appropriate service, and the action specifies
+    which method to call.
+
+    Example manifest.yaml:
+        hooks:
+          on_agents_changed: constitution:sync_agent_files
+          on_upgrade: constitution:migrate_schema
+    """
+
+    # Agent lifecycle
+    on_agents_changed: str | None = Field(
+        default=None,
+        description="Called when agents are added/removed via 'oak init'",
+    )
+
+    # Upgrade lifecycle
+    on_pre_upgrade: str | None = Field(
+        default=None,
+        description="Called before 'oak upgrade' applies changes (can prepare/backup)",
+    )
+    on_post_upgrade: str | None = Field(
+        default=None,
+        description="Called after 'oak upgrade' completes successfully",
+    )
+
+    # Removal lifecycle
+    on_pre_remove: str | None = Field(
+        default=None,
+        description="Called before 'oak remove' starts (can clean up resources)",
+    )
+
+    # Feature lifecycle
+    on_feature_enabled: str | None = Field(
+        default=None,
+        description="Called when THIS feature is enabled",
+    )
+    on_feature_disabled: str | None = Field(
+        default=None,
+        description="Called when THIS feature is about to be disabled",
+    )
+
+    # IDE lifecycle
+    on_ides_changed: str | None = Field(
+        default=None,
+        description="Called when IDEs are added/removed via 'oak init'",
+    )
+
+    # Project lifecycle
+    on_init_complete: str | None = Field(
+        default=None,
+        description="Called after 'oak init' completes (fresh install or update)",
+    )
+
+
 class FeatureManifest(BaseModel):
     """Feature manifest model representing a feature's metadata and configuration."""
 
@@ -26,6 +87,9 @@ class FeatureManifest(BaseModel):
     )
     templates: list[str] = Field(
         default_factory=list, description="Template files provided by this feature"
+    )
+    hooks: LifecycleHooks = Field(
+        default_factory=LifecycleHooks, description="OAK system lifecycle hook subscriptions"
     )
     config_defaults: dict[str, Any] = Field(
         default_factory=dict, description="Default configuration values"

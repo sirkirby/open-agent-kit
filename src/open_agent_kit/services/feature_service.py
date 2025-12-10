@@ -358,9 +358,17 @@ class FeatureService:
 
         # Update config to mark feature as installed
         config = self.config_service.load_config()
-        if feature_name not in config.features.enabled:
+        was_disabled = feature_name not in config.features.enabled
+        if was_disabled:
             config.features.enabled.append(feature_name)
             self.config_service.save_config(config)
+
+        # Trigger feature enabled hook if this is a new install
+        if was_disabled:
+            try:
+                self.trigger_feature_enabled_hook(feature_name)
+            except Exception:
+                pass  # Hook failures are not fatal
 
         return results
 
@@ -418,9 +426,17 @@ class FeatureService:
             shutil.rmtree(project_feature_dir)
             results["templates_removed"] = manifest.templates
 
-        # Update config to mark feature as uninstalled
+        # Trigger feature disabled hook BEFORE removing from config
         config = self.config_service.load_config()
-        if feature_name in config.features.enabled:
+        was_enabled = feature_name in config.features.enabled
+        if was_enabled:
+            try:
+                self.trigger_feature_disabled_hook(feature_name)
+            except Exception:
+                pass  # Hook failures are not fatal
+
+        # Update config to mark feature as uninstalled
+        if was_enabled:
             config.features.enabled.remove(feature_name)
             self.config_service.save_config(config)
 
@@ -468,6 +484,266 @@ class FeatureService:
             )
 
         return results
+
+    # =========================================================================
+    # Lifecycle Hook System
+    # =========================================================================
+    #
+    # OAK defines system-level lifecycle events that features can subscribe to.
+    # Features declare subscriptions in their manifest.yaml under 'hooks:'.
+    # When an event occurs, OAK calls each subscribed feature's handler.
+    #
+    # Hook spec format: "feature:action" (e.g., "constitution:sync_agent_files")
+    # =========================================================================
+
+    def _trigger_hook(
+        self, hook_name: str, features: list[str] | None = None, **kwargs: Any
+    ) -> dict[str, Any]:
+        """Generic hook trigger that calls subscribed features.
+
+        Args:
+            hook_name: Name of the hook (e.g., "on_agents_changed")
+            features: List of features to check (defaults to all installed)
+            **kwargs: Arguments to pass to hook handlers
+
+        Returns:
+            Dictionary with hook execution results per feature
+        """
+        results: dict[str, Any] = {}
+
+        target_features = features if features is not None else self.list_installed_features()
+
+        for feature_name in target_features:
+            manifest = self.get_feature_manifest(feature_name)
+            if not manifest:
+                continue
+
+            # Get the hook spec from the manifest using getattr
+            hook_spec = getattr(manifest.hooks, hook_name, None)
+            if not hook_spec:
+                continue
+
+            try:
+                hook_result = self._execute_hook(hook_spec, **kwargs)
+                results[feature_name] = {"success": True, "result": hook_result}
+            except Exception as e:
+                results[feature_name] = {"success": False, "error": str(e)}
+
+        return results
+
+    # --- Agent Lifecycle ---
+
+    def trigger_agents_changed_hooks(
+        self, agents_added: list[str], agents_removed: list[str]
+    ) -> dict[str, Any]:
+        """Trigger on_agents_changed hooks for all installed features.
+
+        Called when agents are added or removed via 'oak init'.
+
+        Args:
+            agents_added: List of newly added agent types
+            agents_removed: List of removed agent types
+
+        Returns:
+            Dictionary with hook execution results per feature
+        """
+        return self._trigger_hook(
+            "on_agents_changed",
+            agents_added=agents_added,
+            agents_removed=agents_removed,
+        )
+
+    # --- IDE Lifecycle ---
+
+    def trigger_ides_changed_hooks(
+        self, ides_added: list[str], ides_removed: list[str]
+    ) -> dict[str, Any]:
+        """Trigger on_ides_changed hooks for all installed features.
+
+        Called when IDEs are added or removed via 'oak init'.
+
+        Args:
+            ides_added: List of newly added IDE types
+            ides_removed: List of removed IDE types
+
+        Returns:
+            Dictionary with hook execution results per feature
+        """
+        return self._trigger_hook(
+            "on_ides_changed",
+            ides_added=ides_added,
+            ides_removed=ides_removed,
+        )
+
+    # --- Upgrade Lifecycle ---
+
+    def trigger_pre_upgrade_hooks(self, plan: dict[str, Any]) -> dict[str, Any]:
+        """Trigger on_pre_upgrade hooks before upgrade applies changes.
+
+        Called at the start of 'oak upgrade' before any changes are made.
+        Features can use this to prepare or backup data.
+
+        Args:
+            plan: The upgrade plan from UpgradeService.plan_upgrade()
+
+        Returns:
+            Dictionary with hook execution results per feature
+        """
+        return self._trigger_hook("on_pre_upgrade", plan=plan)
+
+    def trigger_post_upgrade_hooks(self, results: dict[str, Any]) -> dict[str, Any]:
+        """Trigger on_post_upgrade hooks after upgrade completes.
+
+        Called after 'oak upgrade' completes successfully.
+        Features can use this to migrate data or notify users.
+
+        Args:
+            results: The upgrade results from UpgradeService.execute_upgrade()
+
+        Returns:
+            Dictionary with hook execution results per feature
+        """
+        return self._trigger_hook("on_post_upgrade", results=results)
+
+    # --- Removal Lifecycle ---
+
+    def trigger_pre_remove_hooks(self) -> dict[str, Any]:
+        """Trigger on_pre_remove hooks before oak remove starts.
+
+        Called at the start of 'oak remove' before any files are removed.
+        Features can use this to clean up external resources.
+
+        Returns:
+            Dictionary with hook execution results per feature
+        """
+        return self._trigger_hook("on_pre_remove")
+
+    # --- Feature Lifecycle ---
+
+    def trigger_feature_enabled_hook(self, feature_name: str) -> dict[str, Any]:
+        """Trigger on_feature_enabled hook for a specific feature.
+
+        Called when a feature is enabled (added to the project).
+
+        Args:
+            feature_name: Name of the feature being enabled
+
+        Returns:
+            Dictionary with hook execution result for this feature
+        """
+        return self._trigger_hook(
+            "on_feature_enabled",
+            features=[feature_name],
+            feature_name=feature_name,
+        )
+
+    def trigger_feature_disabled_hook(self, feature_name: str) -> dict[str, Any]:
+        """Trigger on_feature_disabled hook for a specific feature.
+
+        Called when a feature is about to be disabled (removed from project).
+
+        Args:
+            feature_name: Name of the feature being disabled
+
+        Returns:
+            Dictionary with hook execution result for this feature
+        """
+        return self._trigger_hook(
+            "on_feature_disabled",
+            features=[feature_name],
+            feature_name=feature_name,
+        )
+
+    # --- Project Lifecycle ---
+
+    def trigger_init_complete_hooks(
+        self, is_fresh_install: bool, agents: list[str], ides: list[str], features: list[str]
+    ) -> dict[str, Any]:
+        """Trigger on_init_complete hooks after oak init finishes.
+
+        Called after 'oak init' completes (both fresh install and updates).
+
+        Args:
+            is_fresh_install: True if this was a fresh install, False if update
+            agents: List of configured agents
+            ides: List of configured IDEs
+            features: List of enabled features
+
+        Returns:
+            Dictionary with hook execution results per feature
+        """
+        return self._trigger_hook(
+            "on_init_complete",
+            is_fresh_install=is_fresh_install,
+            agents=agents,
+            ides=ides,
+            features=features,
+        )
+
+    # --- Hook Execution ---
+
+    def _execute_hook(self, hook_spec: str, **kwargs: Any) -> Any:
+        """Execute a feature hook by its specification.
+
+        Hook spec format: "feature:action" (e.g., "constitution:sync_agent_files")
+
+        Args:
+            hook_spec: Hook specification string
+            **kwargs: Arguments to pass to the hook handler
+
+        Returns:
+            Result from the hook handler
+
+        Raises:
+            ValueError: If hook spec is invalid or handler not found
+        """
+        if ":" not in hook_spec:
+            raise ValueError(f"Invalid hook spec format: {hook_spec} (expected 'feature:action')")
+
+        feature_name, action = hook_spec.split(":", 1)
+
+        # Dispatch to appropriate service based on feature
+        if feature_name == "constitution":
+            return self._execute_constitution_hook(action, **kwargs)
+        elif feature_name == "rfc":
+            return self._execute_rfc_hook(action, **kwargs)
+        else:
+            raise ValueError(f"Unknown feature for hook: {feature_name}")
+
+    def _execute_constitution_hook(self, action: str, **kwargs: Any) -> Any:
+        """Execute a constitution feature hook.
+
+        Args:
+            action: Hook action name
+            **kwargs: Arguments for the action
+
+        Returns:
+            Result from the action
+        """
+        from open_agent_kit.services.constitution_service import ConstitutionService
+
+        constitution_service = ConstitutionService(self.project_root)
+
+        if action == "sync_agent_files":
+            return constitution_service.sync_agent_instruction_files(
+                agents_added=kwargs.get("agents_added", []),
+                agents_removed=kwargs.get("agents_removed", []),
+            )
+        else:
+            raise ValueError(f"Unknown constitution hook action: {action}")
+
+    def _execute_rfc_hook(self, action: str, **kwargs: Any) -> Any:
+        """Execute an RFC feature hook.
+
+        Args:
+            action: Hook action name
+            **kwargs: Arguments for the action
+
+        Returns:
+            Result from the action
+        """
+        # RFC hooks can be added here as needed
+        raise ValueError(f"Unknown rfc hook action: {action}")
 
 
 def get_feature_service(project_root: Path | None = None) -> FeatureService:

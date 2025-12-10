@@ -41,7 +41,7 @@ from .exceptions import (
     TemplateError,
     ValidationError,
 )
-from .feature import FeatureManifest
+from .feature import FeatureManifest, LifecycleHooks
 from .project import ProjectConfig, ProjectState
 from .rfc import RFCDocument, RFCIndex
 from .state import OakState
@@ -70,6 +70,7 @@ __all__ = [
     "AgentRequirements",
     # Features
     "FeatureManifest",
+    "LifecycleHooks",
     # RFC
     "RFCDocument",
     "RFCIndex",

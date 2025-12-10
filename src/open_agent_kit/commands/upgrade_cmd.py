@@ -108,7 +108,25 @@ def upgrade_command(
     # Execute upgrade
     if not dry_run:
         print_info("")  # Blank line
+
+        # Trigger pre-upgrade hooks
+        from open_agent_kit.services.feature_service import FeatureService
+
+        feature_service = FeatureService(project_root)
+        try:
+            feature_service.trigger_pre_upgrade_hooks(plan)
+        except Exception:
+            pass  # Hook failures are not fatal
+
+        # Execute the upgrade
         results = upgrade_service.execute_upgrade(plan)
+
+        # Trigger post-upgrade hooks
+        try:
+            feature_service.trigger_post_upgrade_hooks(dict(results))
+        except Exception:
+            pass  # Hook failures are not fatal
+
         _display_upgrade_results(results)
     else:
         print_info(f"\n[dim]{INFO_MESSAGES['dry_run_complete']}[/dim]")

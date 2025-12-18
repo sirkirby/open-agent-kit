@@ -183,8 +183,8 @@ class SkillManifest(BaseModel):
         frontmatter["body"] = body
         frontmatter["source_path"] = skill_path
 
-        # Determine location from path
-        path_str = str(skill_path)
+        # Determine location from path (use as_posix() for cross-platform consistency)
+        path_str = skill_path.as_posix()
         if ".oak/skills/" in path_str or ".claude/skills/" in path_str:
             frontmatter["location"] = "project"
         elif "open-agent-kit/skills/" in path_str or "open_agent_kit/skills/" in path_str:

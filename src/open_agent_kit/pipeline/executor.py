@@ -1,7 +1,8 @@
 """Pipeline executor for running stages in order."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from open_agent_kit.pipeline.context import PipelineContext
 from open_agent_kit.pipeline.stage import Stage, StageOutcome, StageResult

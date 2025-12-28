@@ -32,7 +32,7 @@ class TriggerAgentsChangedStage(BaseStage):
 
         # Extract useful information from hook results
         hook_info = []
-        for feature_name, result in results.items():
+        for _feature_name, result in results.items():
             if result.get("success") and result.get("result"):
                 hook_result = result["result"]
                 if hook_result.get("created"):

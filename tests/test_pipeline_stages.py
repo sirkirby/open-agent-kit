@@ -2,10 +2,8 @@
 
 from pathlib import Path
 
-import pytest
-
 from open_agent_kit.pipeline.context import FlowType, PipelineContext, SelectionState
-from open_agent_kit.pipeline.stage import BaseStage, StageOutcome, StageResult
+from open_agent_kit.pipeline.stage import StageOutcome, StageResult
 
 
 class TestStageOutcome:
@@ -464,10 +462,13 @@ class TestUpgradeStages:
             flow_type=FlowType.UPGRADE,
             dry_run=True,
         )
-        context.set_result("plan_upgrade", {
-            "plan": {"commands": [{"file": "test.md"}]},
-            "has_upgrades": True,
-        })
+        context.set_result(
+            "plan_upgrade",
+            {
+                "plan": {"commands": [{"file": "test.md"}]},
+                "has_upgrades": True,
+            },
+        )
 
         assert stage.should_run(context) is False
 
@@ -482,10 +483,13 @@ class TestUpgradeStages:
             flow_type=FlowType.UPGRADE,
             dry_run=False,
         )
-        context.set_result("plan_upgrade", {
-            "plan": {"commands": [{"file": "test.md"}]},
-            "has_upgrades": True,
-        })
+        context.set_result(
+            "plan_upgrade",
+            {
+                "plan": {"commands": [{"file": "test.md"}]},
+                "has_upgrades": True,
+            },
+        )
 
         assert stage.should_run(context) is True
 
@@ -500,10 +504,13 @@ class TestUpgradeStages:
             flow_type=FlowType.UPGRADE,
             dry_run=False,
         )
-        context.set_result("plan_upgrade", {
-            "plan": {"commands": []},
-            "has_upgrades": True,
-        })
+        context.set_result(
+            "plan_upgrade",
+            {
+                "plan": {"commands": []},
+                "has_upgrades": True,
+            },
+        )
 
         assert stage.should_run(context) is False
 
@@ -518,10 +525,13 @@ class TestUpgradeStages:
             flow_type=FlowType.UPGRADE,
             dry_run=False,
         )
-        context.set_result("plan_upgrade", {
-            "plan": {"migrations": [{"id": "test", "description": "Test migration"}]},
-            "has_upgrades": True,
-        })
+        context.set_result(
+            "plan_upgrade",
+            {
+                "plan": {"migrations": [{"id": "test", "description": "Test migration"}]},
+                "has_upgrades": True,
+            },
+        )
 
         assert stage.should_run(context) is True
 
@@ -536,9 +546,12 @@ class TestUpgradeStages:
             flow_type=FlowType.UPGRADE,
             dry_run=False,
         )
-        context.set_result("plan_upgrade", {
-            "plan": {"version_outdated": True},
-            "has_upgrades": True,
-        })
+        context.set_result(
+            "plan_upgrade",
+            {
+                "plan": {"version_outdated": True},
+                "has_upgrades": True,
+            },
+        )
 
         assert stage.should_run(context) is True

@@ -386,9 +386,7 @@ class CleanupDirectoriesStage(BaseStage):
 
                     # Get skills directory if agent supports skills
                     if manifest.capabilities.has_skills:
-                        skills_dir = (
-                            agent_folder / manifest.capabilities.skills_directory
-                        )
+                        skills_dir = agent_folder / manifest.capabilities.skills_directory
                         dirs.add(skills_dir)
 
                 except Exception:

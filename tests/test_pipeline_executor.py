@@ -1,12 +1,14 @@
 """Tests for pipeline executor."""
 
 from pathlib import Path
-from typing import Any
-
-import pytest
 
 from open_agent_kit.pipeline.context import FlowType, PipelineContext, SelectionState
-from open_agent_kit.pipeline.executor import Pipeline, PipelineBuilder, build_init_pipeline, build_upgrade_pipeline
+from open_agent_kit.pipeline.executor import (
+    Pipeline,
+    PipelineBuilder,
+    build_init_pipeline,
+    build_upgrade_pipeline,
+)
 from open_agent_kit.pipeline.stage import BaseStage, StageOutcome, StageResult
 
 
@@ -300,11 +302,7 @@ class TestPipelineBuilder:
 
     def test_fluent_interface(self):
         """Test fluent interface for chaining."""
-        builder = (
-            PipelineBuilder()
-            .add(MockStage("a", 100))
-            .add(MockStage("b", 200))
-        )
+        builder = PipelineBuilder().add(MockStage("a", 100)).add(MockStage("b", 200))
 
         assert len(builder._stages) == 2
 

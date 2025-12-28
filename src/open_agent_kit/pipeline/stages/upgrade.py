@@ -477,8 +477,8 @@ class UpdateVersionStage(BaseStage):
         if context.dry_run:
             return False
         plan_result = context.get_result("plan_upgrade", {})
-        plan = plan_result.get("plan", {})
-        return plan.get("version_outdated", False) or plan.get("has_upgrades", False)
+        plan: dict = plan_result.get("plan", {})  # type: ignore[assignment]
+        return bool(plan.get("version_outdated", False) or plan.get("has_upgrades", False))
 
     def _execute(self, context: PipelineContext) -> StageOutcome:
         """Update config version."""
@@ -535,7 +535,9 @@ class TriggerPostUpgradeHooksStage(BaseStage):
 
     def _collect_upgrade_results(self, context: PipelineContext) -> dict:
         """Collect results from all upgrade stages."""
-        results = {
+        from typing import Any
+
+        results: dict[str, Any] = {
             "commands": {"upgraded": [], "failed": []},
             "templates": {"upgraded": [], "failed": []},
             "obsolete_removed": {"upgraded": [], "failed": []},

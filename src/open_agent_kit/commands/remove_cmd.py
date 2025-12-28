@@ -72,9 +72,12 @@ def remove_command(
         flow_type=FlowType.REMOVE,
     )
     # Store removal options for stages
-    context.set_result("removal_options", {
-        "keep_ide_settings": keep_ide_settings,
-    })
+    context.set_result(
+        "removal_options",
+        {
+            "keep_ide_settings": keep_ide_settings,
+        },
+    )
 
     # Build and execute pipeline
     pipeline = build_remove_pipeline().build()

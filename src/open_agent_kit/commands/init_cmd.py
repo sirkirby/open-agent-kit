@@ -208,9 +208,7 @@ def init_command(
     if result.success:
         if flow_type == FlowType.UPDATE:
             tracker.finish("open-agent-kit configuration updated successfully!")
-            _display_update_message(
-                existing_agents, selected_agents, existing_ides, selected_ides
-            )
+            _display_update_message(existing_agents, selected_agents, existing_ides, selected_ides)
         else:
             tracker.finish("open-agent-kit initialized successfully!")
             _display_next_steps(selected_agents, selected_ides)

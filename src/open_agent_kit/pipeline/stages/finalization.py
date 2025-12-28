@@ -21,7 +21,7 @@ class EnsureGitignoreStage(BaseStage):
 
     def _execute(self, context: PipelineContext) -> StageOutcome:
         """Ensure .gitignore has issue context entries."""
-        from open_agent_kit.commands.init_cmd import ensure_gitignore_has_issue_context
+        from open_agent_kit.utils import ensure_gitignore_has_issue_context
 
         try:
             ensure_gitignore_has_issue_context(context.project_root)

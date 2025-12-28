@@ -1,6 +1,6 @@
 """Pipeline executor for running stages in order."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -207,7 +207,7 @@ class PipelineBuilder:
         ... )
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._stages: list[Stage] = []
 
     def add(self, stage: Stage) -> "PipelineBuilder":
@@ -215,7 +215,7 @@ class PipelineBuilder:
         self._stages.append(stage)
         return self
 
-    def add_all(self, stages: list[Stage]) -> "PipelineBuilder":
+    def add_all(self, stages: Sequence[Stage]) -> "PipelineBuilder":
         """Add multiple stages."""
         self._stages.extend(stages)
         return self

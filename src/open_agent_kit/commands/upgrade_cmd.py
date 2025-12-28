@@ -124,10 +124,13 @@ def upgrade_command(
         context.set_result("plan_upgrade", {"plan": plan, "has_upgrades": True})
         # Store upgrade options for stages that might need them
         # Use different keys to avoid conflict with stage result names
-        context.set_result("upgrade_options", {
-            "commands": upgrade_commands,
-            "templates": upgrade_templates,
-        })
+        context.set_result(
+            "upgrade_options",
+            {
+                "commands": upgrade_commands,
+                "templates": upgrade_templates,
+            },
+        )
 
         # Build and execute pipeline
         pipeline = build_upgrade_pipeline().build()

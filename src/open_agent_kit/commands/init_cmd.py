@@ -482,9 +482,8 @@ def init_command(
         config = config_service.create_default_config(
             agents=selected_agents,
             ides=selected_ides,
+            features=[],  # Empty - let install_feature() add each feature for proper skill installation
         )
-        # Set features in config
-        config.features.enabled = selected_features
 
         # Populate agent_capabilities from manifests (visible and editable by users)
         agent_service = AgentService(project_root)

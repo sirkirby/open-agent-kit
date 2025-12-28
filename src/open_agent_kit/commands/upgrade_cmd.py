@@ -13,6 +13,8 @@ from open_agent_kit.config.messages import (
     WARNING_MESSAGES,
 )
 from open_agent_kit.constants import VERSION
+from open_agent_kit.pipeline.context import FlowType, PipelineContext
+from open_agent_kit.pipeline.executor import build_upgrade_pipeline
 from open_agent_kit.services.upgrade_service import UpgradePlan, UpgradeResults, UpgradeService
 from open_agent_kit.utils import (
     StepTracker,
@@ -57,7 +59,7 @@ def upgrade_command(
     """
     project_root = Path.cwd()
 
-    # Initialize upgrade service
+    # Initialize upgrade service for planning
     upgrade_service = UpgradeService(project_root)
 
     # Check if open-agent-kit is initialized
@@ -75,7 +77,7 @@ def upgrade_command(
     if dry_run:
         print_info(f"{INFO_MESSAGES['dry_run_mode']}\n")
 
-    # Get upgrade plan
+    # Get upgrade plan (using UpgradeService for planning)
     plan = upgrade_service.plan_upgrade(
         commands=upgrade_commands,
         templates=upgrade_templates,
@@ -108,31 +110,105 @@ def upgrade_command(
             print_info(f"\n{INFO_MESSAGES['upgrade_cancelled']}")
             return
 
-    # Execute upgrade
+    # Execute upgrade using pipeline
     if not dry_run:
         print_info("")  # Blank line
 
-        # Trigger pre-upgrade hooks
-        from open_agent_kit.services.feature_service import FeatureService
+        # Build pipeline context with plan pre-populated
+        context = PipelineContext(
+            project_root=project_root,
+            flow_type=FlowType.UPGRADE,
+            dry_run=False,
+        )
+        # Pre-populate the plan in context so stages don't need to re-plan
+        context.set_result("plan_upgrade", {"plan": plan, "has_upgrades": True})
+        # Store upgrade options for stages that might need them
+        # Use different keys to avoid conflict with stage result names
+        context.set_result("upgrade_options", {
+            "commands": upgrade_commands,
+            "templates": upgrade_templates,
+        })
 
-        feature_service = FeatureService(project_root)
-        try:
-            feature_service.trigger_pre_upgrade_hooks(dict(plan))
-        except Exception:
-            pass  # Hook failures are not fatal
+        # Build and execute pipeline
+        pipeline = build_upgrade_pipeline().build()
+        step_count = pipeline.get_stage_count(context)
+        tracker = StepTracker(step_count)
 
-        # Execute the upgrade
-        results = upgrade_service.execute_upgrade(plan)
+        result = pipeline.execute(context, tracker)
 
-        # Trigger post-upgrade hooks
-        try:
-            feature_service.trigger_post_upgrade_hooks(dict(results))
-        except Exception:
-            pass  # Hook failures are not fatal
+        # Collect results from pipeline context
+        results = _collect_pipeline_results(context)
 
-        _display_upgrade_results(results)
+        if result.success:
+            _display_upgrade_results(results)
+        else:
+            for stage_name, error in result.stages_failed:
+                print_error(f"Stage '{stage_name}' failed: {error}")
+            raise typer.Exit(code=1)
     else:
         print_info(f"\n[dim]{INFO_MESSAGES['dry_run_complete']}[/dim]")
+
+
+def _collect_pipeline_results(context: PipelineContext) -> UpgradeResults:
+    """Collect upgrade results from pipeline context.
+
+    Args:
+        context: Pipeline context with stage results
+
+    Returns:
+        UpgradeResults TypedDict with all upgrade outcomes
+    """
+    results: UpgradeResults = {
+        "commands": {"upgraded": [], "failed": []},
+        "templates": {"upgraded": [], "failed": []},
+        "ide_settings": {"upgraded": [], "failed": []},
+        "migrations": {"upgraded": [], "failed": []},
+        "obsolete_removed": {"upgraded": [], "failed": []},
+        "skills": {"upgraded": [], "failed": []},
+        "structural_repairs": [],
+        "version_updated": False,
+    }
+
+    # Collect from each stage result
+    cmd_result = context.get_result("upgrade_commands", {})
+    if cmd_result:
+        results["commands"]["upgraded"] = cmd_result.get("upgraded", [])
+        results["commands"]["failed"] = cmd_result.get("failed", [])
+
+    tpl_result = context.get_result("upgrade_templates", {})
+    if tpl_result:
+        results["templates"]["upgraded"] = tpl_result.get("upgraded", [])
+        results["templates"]["failed"] = tpl_result.get("failed", [])
+
+    obsolete_result = context.get_result("remove_obsolete_templates", {})
+    if obsolete_result:
+        results["obsolete_removed"]["upgraded"] = obsolete_result.get("removed", [])
+        results["obsolete_removed"]["failed"] = obsolete_result.get("failed", [])
+
+    ide_result = context.get_result("upgrade_ide_settings", {})
+    if ide_result:
+        results["ide_settings"]["upgraded"] = ide_result.get("upgraded", [])
+        results["ide_settings"]["failed"] = ide_result.get("failed", [])
+
+    skill_result = context.get_result("upgrade_skills", {})
+    if skill_result:
+        results["skills"]["upgraded"] = skill_result.get("upgraded", [])
+        results["skills"]["failed"] = skill_result.get("failed", [])
+
+    migration_result = context.get_result("run_migrations", {})
+    if migration_result:
+        results["migrations"]["upgraded"] = migration_result.get("completed", [])
+        results["migrations"]["failed"] = migration_result.get("failed", [])
+
+    repair_result = context.get_result("upgrade_structural_repairs", {})
+    if repair_result:
+        results["structural_repairs"] = repair_result.get("repaired", [])
+
+    version_result = context.get_result("update_upgrade_version", {})
+    if version_result and version_result.get("version"):
+        results["version_updated"] = True
+
+    return results
 
 
 def _display_upgrade_plan(plan: UpgradePlan, dry_run: bool) -> None:

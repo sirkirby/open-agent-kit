@@ -434,6 +434,75 @@ class SkillService:
 
         return results
 
+    def cleanup_skills_for_removed_agents(self, removed_agents: list[str]) -> dict[str, Any]:
+        """Remove skills directories for agents that were removed.
+
+        When an agent is removed from the configuration, this method cleans up
+        the skills that were installed in that agent's skills directory.
+
+        Args:
+            removed_agents: List of agent type names that were removed
+
+        Returns:
+            Dictionary with cleanup results:
+            {
+                'agents_cleaned': ['codex'],
+                'skills_removed': ['planning-workflow', 'research-synthesis'],
+                'directories_removed': ['.codex/skills/planning-workflow'],
+                'errors': []
+            }
+        """
+        from open_agent_kit.services.agent_service import AgentService
+
+        results: dict[str, Any] = {
+            "agents_cleaned": [],
+            "skills_removed": [],
+            "directories_removed": [],
+            "errors": [],
+        }
+
+        agent_service = AgentService(self.project_root)
+
+        for agent_type in removed_agents:
+            # Get agent manifest to find skills directory
+            manifest = agent_service.get_agent_manifest(agent_type)
+            if not manifest:
+                continue
+
+            # Check if agent supports skills
+            if not manifest.capabilities.has_skills:
+                continue
+
+            # Build the skills directory path: {agent_folder}/{skills_directory}
+            agent_folder = manifest.installation.folder.rstrip("/")
+            skills_subdir = manifest.capabilities.skills_directory
+            skills_dir = self.project_root / agent_folder / skills_subdir
+
+            if not skills_dir.exists():
+                continue
+
+            # Remove all skill subdirectories
+            try:
+                for skill_dir in skills_dir.iterdir():
+                    if skill_dir.is_dir():
+                        skill_name = skill_dir.name
+                        shutil.rmtree(skill_dir)
+                        results["directories_removed"].append(
+                            str(skill_dir.relative_to(self.project_root))
+                        )
+                        if skill_name not in results["skills_removed"]:
+                            results["skills_removed"].append(skill_name)
+
+                # Try to remove the skills directory if empty
+                if skills_dir.exists() and not any(skills_dir.iterdir()):
+                    skills_dir.rmdir()
+
+                results["agents_cleaned"].append(agent_type)
+            except Exception as e:
+                results["errors"].append(f"Error cleaning skills for {agent_type}: {e}")
+
+        return results
+
     def refresh_skills(self) -> dict[str, Any]:
         """Refresh all installed skills by re-copying from package.
 

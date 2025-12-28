@@ -22,19 +22,16 @@ from open_agent_kit.constants import (
     IDE_DISPLAY_NAMES,
     SUPPORTED_FEATURES,
     SUPPORTED_IDES,
-    VERSION,
 )
 from open_agent_kit.models.config import AgentCapabilitiesConfig
+from open_agent_kit.pipeline.context import FlowType, PipelineContext, SelectionState
+from open_agent_kit.pipeline.executor import build_init_pipeline
 from open_agent_kit.services.agent_service import AgentService
 from open_agent_kit.services.config_service import ConfigService
-from open_agent_kit.services.feature_service import FeatureService
-from open_agent_kit.services.ide_settings_service import IDESettingsService
 from open_agent_kit.utils import (
     SelectOption,
     StepTracker,
     dir_exists,
-    ensure_dir,
-    ensure_gitignore_has_issue_context,
     multi_select,
     print_error,
     print_header,
@@ -109,9 +106,16 @@ def init_command(
     # Detect if already initialized
     is_existing = dir_exists(oak_dir)
 
-    # Check initialization state
-    if is_existing and not force:
-        # Idempotent mode: add agents to existing installation
+    # Determine flow type
+    if force:
+        flow_type = FlowType.FORCE_REINIT
+    elif is_existing:
+        flow_type = FlowType.UPDATE
+    else:
+        flow_type = FlowType.FRESH_INIT
+
+    # Display appropriate header based on flow type
+    if flow_type == FlowType.UPDATE:
         if agent:
             print_header("Update open-agent-kit Configuration")
             print_info(f"{INFO_MESSAGES['adding_agents']}\n")
@@ -129,31 +133,112 @@ def init_command(
             )
             raise typer.Exit(code=1)
         else:
-            # Interactive mode: take them to agent addition flow
             print_header("Update open-agent-kit Configuration")
             print_info(f"{INFO_MESSAGES['add_more_agents']}\n")
-    elif not is_existing:
+    elif flow_type == FlowType.FRESH_INIT:
         print_header("Initialize open-agent-kit")
         print_info(f"{INFO_MESSAGES['setting_up']}\n")
-    else:
-        # force=True
+    else:  # FORCE_REINIT
         print_header("Re-initialize open-agent-kit")
         print_info(f"{INFO_MESSAGES['force_reinit']}\n")
 
+    # Load existing configuration if applicable
     config_service = ConfigService(project_root)
-
-    # Load existing configuration if re-running init
     existing_agents: list[str] = []
     existing_ides: list[str] = []
     existing_features: list[str] = []
+
     if is_existing:
         existing_agents = config_service.get_agents()
         existing_ides = config_service.get_ides()
         config = config_service.load_config()
         existing_features = config.features.enabled
 
-    # Determine agent selection
-    selected_agents: list[str] = []
+    # Gather selections (CLI args or interactive)
+    selected_agents = _gather_agent_selection(
+        agent, no_interactive, existing_agents if is_existing else None
+    )
+    selected_ides = _gather_ide_selection(
+        ide, no_interactive, existing_ides if is_existing else None
+    )
+    selected_features = _gather_feature_selection(
+        feature, no_interactive, is_existing, existing_features
+    )
+
+    # Check for no changes in update flow
+    if flow_type == FlowType.UPDATE:
+        agents_changed = set(selected_agents) != set(existing_agents)
+        ides_changed = set(selected_ides) != set(existing_ides)
+        features_changed = set(selected_features) != set(existing_features)
+
+        if not agents_changed and not ides_changed and not features_changed:
+            print_info("\nNo changes to configuration. Current setup:")
+            if existing_agents:
+                print_info(f"  Agents: {', '.join(existing_agents)}")
+            if existing_ides:
+                print_info(f"  IDEs: {', '.join(existing_ides)}")
+            if existing_features:
+                print_info(f"  Features: {', '.join(existing_features)}")
+            return
+
+    # Build pipeline context
+    context = PipelineContext(
+        project_root=project_root,
+        flow_type=flow_type,
+        force=force,
+        interactive=not no_interactive,
+        selections=SelectionState(
+            agents=selected_agents,
+            ides=selected_ides,
+            features=selected_features,
+            previous_agents=existing_agents,
+            previous_ides=existing_ides,
+            previous_features=existing_features,
+        ),
+    )
+
+    # Build and execute pipeline
+    pipeline = build_init_pipeline().build()
+    step_count = pipeline.get_stage_count(context)
+    tracker = StepTracker(step_count)
+
+    result = pipeline.execute(context, tracker)
+
+    # Handle result
+    if result.success:
+        if flow_type == FlowType.UPDATE:
+            tracker.finish("open-agent-kit configuration updated successfully!")
+            _display_update_message(
+                existing_agents, selected_agents, existing_ides, selected_ides
+            )
+        else:
+            tracker.finish("open-agent-kit initialized successfully!")
+            _display_next_steps(selected_agents, selected_ides)
+
+        # Display any hook information
+        _display_hook_results(context)
+    else:
+        # Pipeline failed on critical stage
+        for stage_name, error in result.stages_failed:
+            print_error(f"Stage '{stage_name}' failed: {error}")
+        raise typer.Exit(code=1)
+
+
+def _gather_agent_selection(
+    agent: list[str] | None,
+    no_interactive: bool,
+    existing_agents: list[str] | None,
+) -> list[str]:
+    """Gather agent selection from CLI args or interactive prompt.
+
+    Args:
+        agent: CLI-provided agents
+        no_interactive: Whether to skip interactive prompts
+        existing_agents: Previously configured agents (for pre-selection)
+
+    Returns:
+        List of selected agent names
+    """
     if agent:
         # Validate provided agents using manifests
         agent_service = AgentService()
@@ -169,14 +254,28 @@ def init_command(
                 )
                 raise typer.Exit(code=1)
 
-        # Convert to lowercase
-        selected_agents = [a.lower() for a in agent]
+        return [a.lower() for a in agent]
     elif not no_interactive:
-        # Interactive mode - always show full list with pre-selection if existing
-        selected_agents = _interactive_agent_selection(existing_agents if is_existing else None)
+        return _interactive_agent_selection(existing_agents)
+    else:
+        return []
 
-    # Determine IDE selection
-    selected_ides: list[str] = []
+
+def _gather_ide_selection(
+    ide: list[str] | None,
+    no_interactive: bool,
+    existing_ides: list[str] | None,
+) -> list[str]:
+    """Gather IDE selection from CLI args or interactive prompt.
+
+    Args:
+        ide: CLI-provided IDEs
+        no_interactive: Whether to skip interactive prompts
+        existing_ides: Previously configured IDEs (for pre-selection)
+
+    Returns:
+        List of selected IDE names
+    """
     if ide and isinstance(ide, list) and len(ide) > 0:
         # Validate provided IDEs
         for i in ide:
@@ -192,12 +291,31 @@ def init_command(
         if len(ide) != len(selected_ides) and len(selected_ides) > 0:
             print_error("Cannot specify 'none' with other IDEs")
             raise typer.Exit(code=1)
-    elif not no_interactive:
-        # Interactive mode - always show full list with pre-selection if existing
-        selected_ides = _interactive_ide_selection(existing_ides if is_existing else None)
 
-    # Determine feature selection
-    selected_features: list[str] = []
+        return selected_ides
+    elif not no_interactive:
+        return _interactive_ide_selection(existing_ides)
+    else:
+        return []
+
+
+def _gather_feature_selection(
+    feature: list[str] | None,
+    no_interactive: bool,
+    is_existing: bool,
+    existing_features: list[str],
+) -> list[str]:
+    """Gather feature selection from CLI args or interactive prompt.
+
+    Args:
+        feature: CLI-provided features
+        no_interactive: Whether to skip interactive prompts
+        is_existing: Whether this is an existing installation
+        existing_features: Previously installed features
+
+    Returns:
+        List of selected feature names
+    """
     if feature and isinstance(feature, list) and len(feature) > 0:
         # Validate provided features
         for f in feature:
@@ -209,7 +327,7 @@ def init_command(
         # Convert to lowercase and filter out 'none'
         selected_features = [f.lower() for f in feature if f.lower() != "none"]
 
-        # Handle 'none' with others (feature is guaranteed to be a list here)
+        # Handle 'none' with others
         if (
             isinstance(feature, list)
             and len(feature) != len(selected_features)
@@ -217,356 +335,30 @@ def init_command(
         ):
             print_error("Cannot specify 'none' with other features")
             raise typer.Exit(code=1)
+
+        return selected_features
     elif not no_interactive:
-        # Interactive mode - show feature selection
-        selected_features = _interactive_feature_selection(
-            existing_features if is_existing else None
-        )
+        return _interactive_feature_selection(existing_features if is_existing else None)
     else:
         # Non-interactive mode - use defaults for new installs, preserve existing for updates
         if is_existing:
-            selected_features = existing_features  # Preserve existing features
+            return existing_features
         else:
-            selected_features = list(DEFAULT_FEATURES)  # Use defaults for new projects
+            return list(DEFAULT_FEATURES)
 
-    # Handle idempotent mode (updating agents/IDEs/features in existing installation)
-    if is_existing and not force:
-        # Determine what changed
-        agents_changed = set(selected_agents) != set(existing_agents)
-        ides_changed = set(selected_ides) != set(existing_ides)
-        features_changed = set(selected_features) != set(existing_features)
 
-        if not agents_changed and not ides_changed and not features_changed:
-            print_info("\nNo changes to configuration. Current setup:")
-            if existing_agents:
-                print_info(f"  Agents: {', '.join(existing_agents)}")
-            if existing_ides:
-                print_info(f"  IDEs: {', '.join(existing_ides)}")
-            if existing_features:
-                print_info(f"  Features: {', '.join(existing_features)}")
-            return
+def _display_hook_results(context: PipelineContext) -> None:
+    """Display useful information from hook stage results.
 
-        # Determine steps needed
-        steps_needed = 0
-        if agents_changed:
-            steps_needed += 2  # Update config + create/remove commands
-        if ides_changed:
-            steps_needed += 2  # Update config + install settings
-        if features_changed:
-            steps_needed += 2  # Update config + add/remove features
-
-        tracker = StepTracker(steps_needed)
-
-        # Update agents if changed
-        if agents_changed:
-            # Determine which agents were removed
-            agents_removed = set(existing_agents) - set(selected_agents)
-
-            # Step: Update configuration with agents
-            tracker.start_step("Updating agent configuration")
-            try:
-                config_service.update_agents(selected_agents)
-                config_service.update_config(version=VERSION)  # Update version too
-
-                # Update agent_capabilities for new agents
-                config = config_service.load_config()
-                agent_service = AgentService(project_root)
-
-                # Remove capabilities for removed agents
-                for agent_type in agents_removed:
-                    config.agent_capabilities.pop(agent_type, None)
-
-                # Add capabilities for new agents (preserve existing overrides)
-                agents_added = set(selected_agents) - set(existing_agents)
-                for agent_type in agents_added:
-                    if agent_type not in config.agent_capabilities:
-                        try:
-                            caps_dict = agent_service.get_capabilities_config(agent_type)
-                            config.agent_capabilities[agent_type] = AgentCapabilitiesConfig(
-                                **caps_dict
-                            )
-                        except ValueError:
-                            pass
-
-                config_service.save_config(config)
-
-                # Ensure .gitignore excludes issue context.json files
-                ensure_gitignore_has_issue_context(project_root)
-                tracker.complete_step("Updated agent configuration")
-            except Exception as e:
-                tracker.fail_step("Failed to update configuration", str(e))
-                raise typer.Exit(code=1)
-
-            # Step: Update command templates
-            # Determine which agents were added
-            agents_added = set(selected_agents) - set(existing_agents)
-
-            tracker.start_step(f"Updating command templates for {len(selected_agents)} agent(s)")
-            try:
-                agent_service = AgentService(project_root)
-
-                # Remove commands for removed agents
-                for agent_type in agents_removed:
-                    removed_count = agent_service.remove_agent_commands(agent_type)
-                    if removed_count > 0:
-                        print_info(f"  Removed {removed_count} command(s) for {agent_type}")
-
-                # Install feature commands for newly added agents
-                # Use FeatureService for proper agent-aware rendering and state tracking
-                if agents_added:
-                    feature_svc = FeatureService(project_root)
-                    installed_features = config_service.get_features()
-                    for feature_name in installed_features:
-                        # Install feature for just the new agents
-                        feature_svc.install_feature(feature_name, list(agents_added))
-
-                tracker.complete_step("Updated command templates")
-            except Exception as e:
-                tracker.fail_step("Failed to update commands", str(e))
-                # Not fatal, continue
-
-            # Trigger feature hooks for agent changes (e.g., sync constitution files)
-            if agents_added or agents_removed:
-                try:
-                    feature_svc = FeatureService(project_root)
-                    hook_results = feature_svc.trigger_agents_changed_hooks(
-                        agents_added=list(agents_added),
-                        agents_removed=list(agents_removed),
-                    )
-                    # Report any agent instruction file changes
-                    for _feature_name, result in hook_results.items():
-                        if result.get("success") and result.get("result"):
-                            hook_result = result["result"]
-                            if hook_result.get("created"):
-                                for agent in hook_result["created"]:
-                                    print_info(f"  Created instruction file for {agent}")
-                            if hook_result.get("updated"):
-                                for agent in hook_result["updated"]:
-                                    print_info(f"  Updated instruction file for {agent}")
-                except Exception:
-                    # Hook failures are not fatal
-                    pass
-
-        # Update IDEs if changed
-        if ides_changed:
-            # Determine which IDEs were removed
-            ides_removed = set(existing_ides) - set(selected_ides)
-
-            # Step: Update configuration with IDEs
-            tracker.start_step("Updating IDE configuration")
-            try:
-                config_service.update_ides(selected_ides)
-                config_service.update_config(version=VERSION)  # Update version too
-                tracker.complete_step("Updated IDE configuration")
-            except Exception as e:
-                tracker.fail_step("Failed to update configuration", str(e))
-                raise typer.Exit(code=1)
-
-            # Step: Update IDE settings
-            tracker.start_step("Updating IDE settings")
-            try:
-                ide_settings_service = IDESettingsService(project_root)
-
-                # Install ALL core IDE assets to .oak/features/core/ide/
-                ide_settings_service.install_core_assets()
-
-                # Remove settings for removed IDEs
-                for ide_type in ides_removed:
-                    if ide_settings_service.remove_settings(ide_type):
-                        ide_name = IDE_DISPLAY_NAMES.get(ide_type, ide_type.capitalize())
-                        print_info(f"  Removed open-agent-kit settings from {ide_name}")
-
-                # Install/update settings for selected IDEs
-                installed_count = 0
-                for ide_type in selected_ides:
-                    if ide_settings_service.install_settings(ide_type):
-                        installed_count += 1
-
-                tracker.complete_step(f"Updated IDE settings for {installed_count} IDE(s)")
-            except Exception as e:
-                tracker.fail_step("Failed to update IDE settings", str(e))
-                # Not fatal, continue
-
-            # Trigger IDE change hooks
-            ides_added = set(selected_ides) - set(existing_ides)
-            if ides_added or ides_removed:
-                try:
-                    feature_svc = FeatureService(project_root)
-                    feature_svc.trigger_ides_changed_hooks(
-                        ides_added=list(ides_added),
-                        ides_removed=list(ides_removed),
-                    )
-                except Exception:
-                    pass  # Hook failures are not fatal
-
-        # Update features if changed
-        if features_changed:
-            # Determine which features were added/removed
-            features_added = set(selected_features) - set(existing_features)
-            features_removed = set(existing_features) - set(selected_features)
-
-            # Step: Update configuration with features
-            tracker.start_step("Updating feature configuration")
-            try:
-                config = config_service.load_config()
-                config.features.enabled = selected_features
-                config_service.save_config(config)
-                config_service.update_config(version=VERSION)  # Update version too
-                tracker.complete_step("Updated feature configuration")
-            except Exception as e:
-                tracker.fail_step("Failed to update configuration", str(e))
-                raise typer.Exit(code=1)
-
-            # Step: Update features (install/remove)
-            tracker.start_step(
-                f"Updating features ({len(features_added)} added, {len(features_removed)} removed)"
-            )
-            try:
-                feature_service = FeatureService(project_root)
-
-                # Remove features first
-                for feature_name in features_removed:
-                    can_remove, blockers = feature_service.can_remove_feature(feature_name)
-                    if not can_remove:
-                        print_info(
-                            f"  Cannot remove '{feature_name}' - required by: {', '.join(blockers)}"
-                        )
-                        continue
-                    feature_service.remove_feature(feature_name, selected_agents)
-                    print_info(f"  Removed feature: {feature_name}")
-
-                # Add features (with dependency resolution)
-                if features_added:
-                    resolved = feature_service.resolve_dependencies(list(features_added))
-                    for feature_name in resolved:
-                        if feature_name not in existing_features:
-                            feature_service.install_feature(feature_name, selected_agents)
-                            print_info(f"  Installed feature: {feature_name}")
-
-                tracker.complete_step("Updated features")
-            except Exception as e:
-                tracker.fail_step("Failed to update features", str(e))
-                # Not fatal, continue
-
-        # Trigger init_complete hook for update flow
-        try:
-            feature_svc = FeatureService(project_root)
-            feature_svc.trigger_init_complete_hooks(
-                is_fresh_install=False,
-                agents=selected_agents,
-                ides=selected_ides,
-                features=selected_features,
-            )
-        except Exception:
-            pass  # Hook failures are not fatal
-
-        tracker.finish("open-agent-kit configuration updated successfully!")
-        _display_update_message(existing_agents, selected_agents, existing_ides, selected_ides)
-        return
-
-    # Full initialization flow
-    tracker = StepTracker(5)
-
-    # Step 1: Create .oak directory
-    tracker.start_step("Creating .oak directory")
-    try:
-        ensure_dir(oak_dir)
-        tracker.complete_step("Created .oak directory")
-    except Exception as e:
-        tracker.fail_step("Failed to create .oak directory", str(e))
-        raise typer.Exit(code=1)
-
-    # Step 2: Create configuration
-    tracker.start_step("Creating configuration")
-    try:
-        config = config_service.create_default_config(
-            agents=selected_agents,
-            ides=selected_ides,
-            features=[],  # Empty - let install_feature() add each feature for proper skill installation
-        )
-
-        # Populate agent_capabilities from manifests (visible and editable by users)
-        agent_service = AgentService(project_root)
-        config.agent_capabilities = _build_agent_capabilities(selected_agents, agent_service)
-
-        config_service.save_config(config)
-
-        # Ensure .gitignore excludes issue context.json files
-        ensure_gitignore_has_issue_context(project_root)
-
-        # Mark all current migrations as completed for new projects
-        # (fresh installs start with latest code, so migrations are not needed)
-        from open_agent_kit.services.migrations import get_migrations
-
-        all_migration_ids = [migration_id for migration_id, _, _ in get_migrations()]
-        if all_migration_ids:
-            config_service.add_completed_migrations(all_migration_ids)
-
-        tracker.complete_step("Created configuration")
-    except Exception as e:
-        tracker.fail_step("Failed to create configuration", str(e))
-        raise typer.Exit(code=1)
-
-    # Step 3: Install IDE settings
-    tracker.start_step("Installing IDE settings")
-    try:
-        ide_settings_service = IDESettingsService(project_root)
-        # Install ALL core IDE assets to .oak/features/core/ide/
-        ide_settings_service.install_core_assets()
-
-        # Install settings to IDE directories for selected IDEs
-        if selected_ides:
-            installed_count = 0
-            for ide_type in selected_ides:
-                if ide_settings_service.install_settings(ide_type):
-                    installed_count += 1
-            if installed_count > 0:
-                tracker.complete_step(f"Installed IDE settings for {installed_count} IDE(s)")
-            else:
-                tracker.complete_step("IDE settings already up to date")
-        else:
-            tracker.complete_step("Installed core IDE assets")
-    except Exception as e:
-        tracker.fail_step("Failed to install IDE settings", str(e))
-        # Not fatal, continue
-
-    # Step 4: Install features (commands and templates)
-    if selected_features:
-        feature_service = FeatureService(project_root)
-        resolved = feature_service.resolve_dependencies(selected_features)
-
-        tracker.start_step(f"Installing {len(resolved)} feature(s)")
-        try:
-            for feature_name in resolved:
-                feature_service.install_feature(feature_name, selected_agents)
-            tracker.complete_step(f"Installed features: {', '.join(resolved)}")
-        except Exception as e:
-            tracker.fail_step("Failed to install features", str(e))
-            # Not fatal, continue
-    else:
-        tracker.skip_step("No features selected, skipping feature installation")
-
-    # Step 5: Finalize
-    tracker.start_step("Finalizing setup")
-
-    # Trigger init_complete hook for fresh install
-    try:
-        feature_svc = FeatureService(project_root)
-        feature_svc.trigger_init_complete_hooks(
-            is_fresh_install=True,
-            agents=selected_agents,
-            ides=selected_ides,
-            features=selected_features,
-        )
-    except Exception:
-        pass  # Hook failures are not fatal
-
-    tracker.complete_step("Setup complete")
-
-    # Display success message and next steps
-    tracker.finish("open-agent-kit initialized successfully!")
-
-    _display_next_steps(selected_agents, selected_ides)
+    Args:
+        context: Pipeline context with stage results
+    """
+    # Check for agent hook results
+    hook_result = context.get_result("trigger_agents_changed")
+    if hook_result:
+        hook_info = hook_result.get("hook_info", [])
+        for info in hook_info:
+            print_info(f"  {info}")
 
 
 def _interactive_agent_selection(existing_agents: list[str] | None = None) -> list[str]:

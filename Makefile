@@ -20,7 +20,7 @@ help:
 	@echo "  Setup:"
 	@echo "    make setup        Install all dependencies (recommended first step)"
 	@echo "    make venv         Setup virtual environment and show activation command"
-	@echo "    make install-tool Install 'oak' globally via uv tool (works from any directory)"
+	@echo "    make install Install 'oak' globally via uv tool (works from any directory)"
 	@echo "    make sync         Sync dependencies with lockfile"
 	@echo "    make lock         Update lockfile after changing pyproject.toml"
 	@echo "    make uninstall    Remove dev environment and stale global installs"

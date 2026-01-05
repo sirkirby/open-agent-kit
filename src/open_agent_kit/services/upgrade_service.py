@@ -611,7 +611,9 @@ class UpgradeService:
         # Check for old .oak/features/ structure that needs cleanup
         features_dir = self.project_root / ".oak" / "features"
         if features_dir.exists():
-            repairs.append("Remove obsolete .oak/features/ directory (assets now read from package)")
+            repairs.append(
+                "Remove obsolete .oak/features/ directory (assets now read from package)"
+            )
 
         # Check for old structure that needs cleanup
         old_templates_dir = self.project_root / ".oak" / "templates"
